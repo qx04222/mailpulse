@@ -22,9 +22,34 @@ def _parse_sender_name(sender: str) -> str:
     return ""
 
 
+def _get_all_company_domains() -> Dict[str, str]:
+    """Get mapping of domain → company_id from all companies."""
+    resp = db.table("companies").select("id, email_domains").eq("is_active", True).execute()
+    domain_map = {}
+    for c in (resp.data or []):
+        for domain in (c.get("email_domains") or []):
+            domain_map[domain.lower()] = c["id"]
+    return domain_map
+
+
+def _detect_direction_by_domain(sender_email: str, company_domains: Dict[str, str]) -> str:
+    """Determine if email is inbound or outbound based on sender domain.
+    If sender's domain matches any company domain → outbound (our employee sent it).
+    Otherwise → inbound (client sent it).
+    """
+    domain = sender_email.split("@")[-1].lower() if "@" in sender_email else ""
+    return "outbound" if domain in company_domains else "inbound"
+
+
 def _detect_direction(sender_email: str, team_emails: List[str]) -> str:
-    """Determine if email is inbound or outbound based on sender."""
+    """Legacy fallback: detect direction by exact email match."""
     return "outbound" if sender_email in team_emails else "inbound"
+
+
+def _find_company_by_domain(email_addr: str, company_domains: Dict[str, str]) -> Optional[str]:
+    """Given an email, return the company_id if domain matches."""
+    domain = email_addr.split("@")[-1].lower() if "@" in email_addr else ""
+    return company_domains.get(domain)
 
 
 def _detect_is_reply(subject: str, is_first_in_thread: bool) -> bool:

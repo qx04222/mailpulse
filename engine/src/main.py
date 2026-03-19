@@ -34,9 +34,12 @@ from .storage.emails import (
     update_email_scores,
     _parse_sender_email,
     _detect_direction,
+    _detect_direction_by_domain,
+    _get_all_company_domains,
     _detect_is_reply,
     count_thread_emails,
 )
+from .storage.employee_discovery import discover_employees_from_email
 from .storage.threads import (
     upsert_thread,
     get_threads_by_company,
@@ -94,6 +97,7 @@ async def run_company(company: Dict[str, Any]) -> Dict[str, Any]:
     telegram_group_id = company.get("telegram_group_id", "")
     members = company.get("members", [])
     team_emails = get_team_emails()
+    company_domains = _get_all_company_domains()
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting {company_name}...")
 
@@ -126,8 +130,16 @@ async def run_company(company: Dict[str, Any]) -> Dict[str, Any]:
 
         for item in items:
             try:
+                # 跳过已处理的邮件（避免重复调 AI）
+                from .storage.emails import get_email_by_gmail_id
+                existing_email = get_email_by_gmail_id(item.id)
+                if existing_email:
+                    email_records.append(existing_email)
+                    continue
+
                 sender_email = _parse_sender_email(item.sender)
-                direction = _detect_direction(sender_email, team_emails)
+                # 用域名判断方向（优先）+ 旧逻辑兜底
+                direction = _detect_direction_by_domain(sender_email, company_domains)
                 gmail_thread_id = item.metadata.get("thread_id", item.id)
 
                 # Check if first in thread
@@ -150,15 +162,14 @@ async def run_company(company: Dict[str, Any]) -> Dict[str, Any]:
                 if client and is_new_client(client):
                     new_client_events.append(client)
 
-                # Detect assigned_to from recipients (for outbound) or suggested assignee
-                assigned_to_id = None
-                if direction == "inbound":
-                    # Look for a team member in To/CC
-                    for addr in recipients_to + recipients_cc:
-                        person = get_person_by_email(addr)
-                        if person:
-                            assigned_to_id = person["id"]
-                            break
+                # 自动发现员工 + 分配负责人（基于域名匹配）
+                assigned_to_id = discover_employees_from_email(
+                    sender_email=sender_email,
+                    sender_raw=item.sender,
+                    recipients=recipients_to + recipients_cc,
+                    company_id=company_id,
+                    company_domains=company_domains,
+                )
 
                 # 3b. Upsert thread
                 thread = upsert_thread(
@@ -206,15 +217,39 @@ async def run_company(company: Dict[str, Any]) -> Dict[str, Any]:
 
         stats["new_emails"] = len(email_records)
 
-        # 4. AI scoring (Haiku) — dedup by thread first
+        # 4. AI scoring (Haiku) — only score NEW emails (skip already scored)
         deduped = _dedup_by_thread(items)
-        scored = await asyncio.gather(
-            *[score_email(item) for item in deduped],
-            return_exceptions=True,
-        )
-        # Filter out exceptions
-        all_scored = [s for s in scored if isinstance(s, dict)]
-        print(f"  -> {len(all_scored)} emails scored")
+        new_items_to_score = []
+        already_scored = []
+        for item in deduped:
+            existing = get_email_by_gmail_id(item.id)
+            if existing and existing.get("score") is not None:
+                # 已有分数，构造 scored 格式复用
+                already_scored.append({
+                    "score": existing["score"],
+                    "reason": existing.get("score_reason", ""),
+                    "one_line": existing.get("one_line", ""),
+                    "action_needed": existing.get("action_needed", False),
+                    "suggested_assignee_email": None,
+                    "client_name": existing.get("client_name"),
+                    "project_address": existing.get("project_address"),
+                    "product_type": existing.get("product_type"),
+                    "item": item,
+                })
+            else:
+                new_items_to_score.append(item)
+
+        if new_items_to_score:
+            scored = await asyncio.gather(
+                *[score_email(item) for item in new_items_to_score],
+                return_exceptions=True,
+            )
+            new_scored = [s for s in scored if isinstance(s, dict)]
+        else:
+            new_scored = []
+
+        all_scored = already_scored + new_scored
+        print(f"  -> {len(new_scored)} new emails scored, {len(already_scored)} cached")
 
         # 5. Update email records with scores
         scored_by_msg_id = {s["item"].id: s for s in all_scored}
