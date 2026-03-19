@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useLocale } from "@/lib/i18n";
 import type { ActionItem, Company, Person } from "@/lib/types";
 
 type ActionItemExpanded = ActionItem & {
@@ -9,6 +10,7 @@ type ActionItemExpanded = ActionItem & {
 };
 
 export default function ActionItemsPage() {
+  const { t } = useLocale();
   const [items, setItems] = useState<ActionItemExpanded[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
@@ -60,7 +62,7 @@ export default function ActionItemsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-6">Action Items</h1>
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">{t("actionItems.title")}</h1>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
@@ -69,7 +71,7 @@ export default function ActionItemsPage() {
           onChange={(e) => setFilterStatus(e.target.value)}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
-          <option value="">All Statuses</option>
+          <option value="">{t("actionItems.allStatuses")}</option>
           <option value="pending">Pending</option>
           <option value="in_progress">In Progress</option>
           <option value="overdue">Overdue</option>
@@ -82,7 +84,7 @@ export default function ActionItemsPage() {
           onChange={(e) => setFilterCompany(e.target.value)}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
-          <option value="">All Companies</option>
+          <option value="">{t("actionItems.allCompanies")}</option>
           {companies.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -95,7 +97,7 @@ export default function ActionItemsPage() {
           onChange={(e) => setFilterAssignee(e.target.value)}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
-          <option value="">All Assignees</option>
+          <option value="">{t("actionItems.allAssignees")}</option>
           {people.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -105,30 +107,30 @@ export default function ActionItemsPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">Loading...</div>
+        <div className="text-center py-12 text-slate-400">{t("common.loading")}</div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">Title</th>
+                <th className="px-5 py-3 font-medium text-slate-500">{t("actionItems.title")}</th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Priority
+                  {t("actionItems.priority")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Status
+                  {t("common.status")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Assigned To
+                  {t("actionItems.assignee")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Company
+                  {t("reports.company")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Due Date
+                  {t("actionItems.dueDate")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Actions
+                  {t("common.actions")}
                 </th>
               </tr>
             </thead>
@@ -139,7 +141,7 @@ export default function ActionItemsPage() {
                     colSpan={7}
                     className="px-5 py-8 text-center text-slate-400"
                   >
-                    No action items found
+                    {t("actionItems.noData")}
                   </td>
                 </tr>
               ) : (
@@ -165,7 +167,7 @@ export default function ActionItemsPage() {
                       <ActionStatusBadge status={item.status} />
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {item.assigned_to?.name ?? "Unassigned"}
+                      {item.assigned_to?.name ?? t("actionItems.unassigned")}
                     </td>
                     <td className="px-5 py-3 text-slate-600">
                       {item.company?.name ?? "—"}
@@ -183,13 +185,13 @@ export default function ActionItemsPage() {
                               onClick={() => updateStatus(item.id, "resolved")}
                               className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
                             >
-                              Resolve
+                              {t("actionItems.resolve")}
                             </button>
                             <button
                               onClick={() => updateStatus(item.id, "dismissed")}
                               className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200"
                             >
-                              Dismiss
+                              {t("actionItems.dismiss")}
                             </button>
                           </div>
                         )}

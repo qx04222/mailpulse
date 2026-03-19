@@ -33,7 +33,7 @@ export default function PeoplePage() {
   }, [fetchData]);
 
   async function handleDelete(id: string) {
-    if (!confirm("Are you sure you want to delete this person?")) return;
+    if (!confirm(t("people.confirmDelete"))) return;
     await fetch(`/api/people?id=${id}`, { method: "DELETE" });
     fetchData();
   }
@@ -56,37 +56,37 @@ export default function PeoplePage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">People</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{t("people.title")}</h1>
         <button
           onClick={openAdd}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Add Person
+          {t("people.addPerson")}
         </button>
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">Loading...</div>
+        <div className="text-center py-12 text-slate-400">{t("common.loading")}</div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">Name</th>
-                <th className="px-5 py-3 font-medium text-slate-500">Email</th>
-                <th className="px-5 py-3 font-medium text-slate-500">Role</th>
+                <th className="px-5 py-3 font-medium text-slate-500">{t("people.name")}</th>
+                <th className="px-5 py-3 font-medium text-slate-500">{t("people.email")}</th>
+                <th className="px-5 py-3 font-medium text-slate-500">{t("people.role")}</th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Telegram
+                  {t("people.telegram")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Active
+                  {t("people.active")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Companies
+                  {t("people.companies")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Actions
+                  {t("common.actions")}
                 </th>
               </tr>
             </thead>
@@ -97,7 +97,7 @@ export default function PeoplePage() {
                     colSpan={7}
                     className="px-5 py-8 text-center text-slate-400"
                   >
-                    No people found
+                    {t("people.noData")}
                   </td>
                 </tr>
               ) : (
@@ -111,7 +111,7 @@ export default function PeoplePage() {
                     </td>
                     <td className="px-5 py-3 text-slate-600">{person.email}</td>
                     <td className="px-5 py-3">
-                      <RoleBadge role={person.role} />
+                      <RoleBadge role={person.role} t={t} />
                     </td>
                     <td className="px-5 py-3 text-slate-600">
                       {person.telegram_user_id ?? "—"}
@@ -124,7 +124,7 @@ export default function PeoplePage() {
                             : "bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {person.is_active ? "Active" : "Inactive"}
+                        {person.is_active ? t("common.active") : t("common.inactive")}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-slate-600">
@@ -170,7 +170,7 @@ export default function PeoplePage() {
   );
 }
 
-function RoleBadge({ role }: { role: string }) {
+function RoleBadge({ role, t }: { role: string; t: (key: string) => string }) {
   const styles: Record<string, string> = {
     owner: "bg-violet-50 text-violet-700",
     manager: "bg-blue-50 text-blue-700",
@@ -180,7 +180,7 @@ function RoleBadge({ role }: { role: string }) {
     <span
       className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[role] ?? "bg-slate-100 text-slate-600"}`}
     >
-      {role}
+      {t(`people.roles.${role}`)}
     </span>
   );
 }
@@ -253,7 +253,7 @@ function PersonForm({
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            {person ? "Edit Person" : "Add Person"}
+            {person ? t("people.editPerson") : t("people.addPerson")}
           </h2>
           <button
             onClick={onClose}
@@ -266,7 +266,7 @@ function PersonForm({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Name
+              {t("people.name")}
             </label>
             <input
               type="text"
@@ -279,7 +279,7 @@ function PersonForm({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Email
+              {t("people.email")}
             </label>
             <input
               type="email"
@@ -292,22 +292,22 @@ function PersonForm({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Role
+              {t("people.role")}
             </label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as Person["role"])}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
-              <option value="owner">Owner</option>
-              <option value="manager">Manager</option>
-              <option value="member">Member</option>
+              <option value="owner">{t("people.roles.owner")}</option>
+              <option value="manager">{t("people.roles.manager")}</option>
+              <option value="member">{t("people.roles.member")}</option>
             </select>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Telegram User ID
+              {t("people.telegram")}
             </label>
             <input
               type="text"
@@ -330,13 +330,13 @@ function PersonForm({
               className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             <label htmlFor="is_active" className="text-sm text-slate-700">
-              Active
+              {t("people.active")}
             </label>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
-              Companies
+              {t("people.companies")}
             </label>
             <div className="space-y-1.5 max-h-32 overflow-y-auto">
               {companies.map((company) => (
@@ -354,7 +354,7 @@ function PersonForm({
                 </label>
               ))}
               {companies.length === 0 && (
-                <p className="text-sm text-slate-400">No companies available</p>
+                <p className="text-sm text-slate-400">{t("people.noCompanies")}</p>
               )}
             </div>
           </div>
@@ -371,14 +371,14 @@ function PersonForm({
               onClick={onClose}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("common.saving") : t("common.save")}
             </button>
           </div>
         </form>

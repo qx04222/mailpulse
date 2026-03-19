@@ -1,4 +1,7 @@
-import { createAdminClient } from "@/lib/supabase";
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useLocale } from "@/lib/i18n";
 import {
   Building2,
   Users,
@@ -6,58 +9,60 @@ import {
   CheckSquare,
 } from "lucide-react";
 
-async function getDashboardData() {
-  const supabase = createAdminClient();
-
-  const [companies, people, threads, actionItems, digestRuns] =
-    await Promise.all([
-      supabase.from("companies").select("id", { count: "exact", head: true }),
-      supabase.from("people").select("id", { count: "exact", head: true }),
-      supabase.from("threads").select("id", { count: "exact", head: true }),
-      supabase.from("action_items").select("id", { count: "exact", head: true }),
-      supabase
-        .from("digest_runs")
-        .select("*, companies(name)")
-        .order("started_at", { ascending: false })
-        .limit(10),
-    ]);
-
-  return {
-    totalCompanies: companies.count ?? 0,
-    totalPeople: people.count ?? 0,
-    totalEmails: threads.count ?? 0,
-    totalActionItems: actionItems.count ?? 0,
-    recentRuns: (digestRuns.data ?? []).map((r: Record<string, unknown>) => ({
-      ...r,
-      company: r.companies,
-    })),
-  };
+interface DashboardData {
+  totalCompanies: number;
+  totalPeople: number;
+  totalEmails: number;
+  totalActionItems: number;
+  recentRuns: Record<string, unknown>[];
 }
 
-export default async function DashboardPage() {
-  const data = await getDashboardData();
+export default function DashboardPage() {
+  const { t } = useLocale();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch("/api/dashboard");
+    const json = await res.json();
+    setData(json);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  if (loading || !data) {
+    return (
+      <div className="text-center py-12 text-slate-400">
+        {t("common.loading")}
+      </div>
+    );
+  }
 
   const stats = [
     {
-      label: "Companies",
+      label: t("dashboard.totalCompanies"),
       value: data.totalCompanies,
       icon: Building2,
       color: "bg-blue-500",
     },
     {
-      label: "People",
+      label: t("dashboard.totalPeople"),
       value: data.totalPeople,
       icon: Users,
       color: "bg-emerald-500",
     },
     {
-      label: "Email Threads",
+      label: t("dashboard.totalThreads"),
       value: data.totalEmails,
       icon: Mail,
       color: "bg-violet-500",
     },
     {
-      label: "Action Items",
+      label: t("dashboard.totalActions"),
       value: data.totalActionItems,
       icon: CheckSquare,
       color: "bg-amber-500",
@@ -66,7 +71,7 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-6">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">{t("nav.dashboard")}</h1>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
@@ -96,25 +101,25 @@ export default async function DashboardPage() {
       <div className="rounded-xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            Recent Digest Runs
+            {t("dashboard.recentRuns")}
           </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">Date</th>
+                <th className="px-5 py-3 font-medium text-slate-500">{t("dashboard.date")}</th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Company
+                  {t("dashboard.company")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Emails
+                  {t("dashboard.emails")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Status
+                  {t("common.status")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Telegram
+                  {t("dashboard.telegram")}
                 </th>
               </tr>
             </thead>
@@ -125,7 +130,7 @@ export default async function DashboardPage() {
                     colSpan={5}
                     className="px-5 py-8 text-center text-slate-400"
                   >
-                    No digest runs yet
+                    {t("dashboard.noRuns")}
                   </td>
                 </tr>
               ) : (
@@ -148,7 +153,7 @@ export default async function DashboardPage() {
                         <StatusBadge status={run.status as string} />
                       </td>
                       <td className="px-5 py-3 text-slate-700">
-                        {run.telegram_delivered ? "Delivered" : "—"}
+                        {run.telegram_delivered ? t("dashboard.delivered") : "—"}
                       </td>
                     </tr>
                   )

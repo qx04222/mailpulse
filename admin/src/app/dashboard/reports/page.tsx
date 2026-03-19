@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Download } from "lucide-react";
+import { useLocale } from "@/lib/i18n";
 import type { DigestRun } from "@/lib/types";
 
 type DigestRunWithCompany = DigestRun & {
@@ -9,6 +10,7 @@ type DigestRunWithCompany = DigestRun & {
 };
 
 export default function ReportsPage() {
+  const { t } = useLocale();
   const [reports, setReports] = useState<DigestRunWithCompany[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -27,40 +29,40 @@ export default function ReportsPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-slate-900 mb-6">
-        Digest Runs & Reports
+        {t("reports.title")}
       </h1>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">Loading...</div>
+        <div className="text-center py-12 text-slate-400">{t("common.loading")}</div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">Date</th>
+                <th className="px-5 py-3 font-medium text-slate-500">{t("reports.date")}</th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Company
+                  {t("reports.company")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Total Emails
+                  {t("reports.totalEmails")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  New
+                  {t("reports.newEmails")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  High Priority
+                  {t("reports.highPriority")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Action Items
+                  {t("reports.actionItems")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Status
+                  {t("reports.status")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Telegram
+                  {t("reports.telegram")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Reports
+                  {t("reports.download")}
                 </th>
               </tr>
             </thead>
@@ -71,7 +73,7 @@ export default function ReportsPage() {
                     colSpan={9}
                     className="px-5 py-8 text-center text-slate-400"
                   >
-                    No digest runs found
+                    {t("reports.noData")}
                   </td>
                 </tr>
               ) : (
@@ -108,7 +110,7 @@ export default function ReportsPage() {
                       <StatusBadge status={run.status} />
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {run.telegram_delivered ? "Yes" : "No"}
+                      {run.telegram_delivered ? t("common.yes") : t("common.no")}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1">

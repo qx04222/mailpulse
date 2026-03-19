@@ -253,7 +253,9 @@ const en: Record<string, string> = {
   "schedules.sections.summary": "Summary",
   "schedules.sections.action_items": "Action Items",
 
+  "people.noCompanies": "No companies available",
   "people.telegramHelper": "Staff can self-bind via Bot /start, or enter manually here",
+  "companies.membersOf": "Members of {name}",
   "companies.telegramGroupHelper": "Add Bot to group, send /bind in group to auto-detect, or enter manually here",
 
   "sla.title": "SLA Management",

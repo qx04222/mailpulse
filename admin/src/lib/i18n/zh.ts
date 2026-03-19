@@ -253,7 +253,9 @@ const zh: Record<string, string> = {
   "schedules.sections.summary": "摘要",
   "schedules.sections.action_items": "待办事项",
 
+  "people.noCompanies": "暂无可选公司",
   "people.telegramHelper": "员工可通过 Bot /start 自助绑定，或在此手动填入",
+  "companies.membersOf": "成员管理 - {name}",
   "companies.telegramGroupHelper": "将 Bot 加入群组后，在群内发送 /bind 自动获取，或在此手动填入",
 
   "sla.title": "SLA 管理",

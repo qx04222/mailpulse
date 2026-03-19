@@ -34,7 +34,7 @@ export default function CompaniesPage() {
   }, [fetchData]);
 
   async function handleDelete(id: string) {
-    if (!confirm("Are you sure you want to delete this company?")) return;
+    if (!confirm(t("companies.confirmDelete"))) return;
     await fetch(`/api/companies?id=${id}`, { method: "DELETE" });
     fetchData();
   }
@@ -42,7 +42,7 @@ export default function CompaniesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Companies</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{t("companies.title")}</h1>
         <button
           onClick={() => {
             setEditing(null);
@@ -51,32 +51,32 @@ export default function CompaniesPage() {
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Add Company
+          {t("companies.addCompany")}
         </button>
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">Loading...</div>
+        <div className="text-center py-12 text-slate-400">{t("common.loading")}</div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">Name</th>
+                <th className="px-5 py-3 font-medium text-slate-500">{t("companies.name")}</th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Gmail Label
+                  {t("companies.gmailLabel")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Telegram Group
+                  {t("companies.telegramGroup")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Active
+                  {t("common.active")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Members
+                  {t("companies.members")}
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  Actions
+                  {t("common.actions")}
                 </th>
               </tr>
             </thead>
@@ -87,7 +87,7 @@ export default function CompaniesPage() {
                     colSpan={6}
                     className="px-5 py-8 text-center text-slate-400"
                   >
-                    No companies found
+                    {t("companies.noData")}
                   </td>
                 </tr>
               ) : (
@@ -115,19 +115,18 @@ export default function CompaniesPage() {
                             : "bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {company.is_active ? "Active" : "Inactive"}
+                        {company.is_active ? t("common.active") : t("common.inactive")}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {company.members?.length ?? 0} member
-                      {(company.members?.length ?? 0) !== 1 ? "s" : ""}
+                      {company.members?.length ?? 0}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => setManagingMembers(company)}
                           className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-emerald-600"
-                          title="Manage members"
+                          title={t("companies.manageMembers")}
                         >
                           <UserPlus className="h-4 w-4" />
                         </button>
@@ -176,6 +175,7 @@ export default function CompaniesPage() {
         <MembersModal
           company={managingMembers}
           allPeople={people}
+          t={t}
           onClose={() => setManagingMembers(null)}
           onUpdate={() => {
             setManagingMembers(null);
@@ -241,7 +241,7 @@ function CompanyForm({
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            {company ? "Edit Company" : "Add Company"}
+            {company ? t("companies.editCompany") : t("companies.addCompany")}
           </h2>
           <button
             onClick={onClose}
@@ -254,7 +254,7 @@ function CompanyForm({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Name
+              {t("companies.name")}
             </label>
             <input
               type="text"
@@ -267,7 +267,7 @@ function CompanyForm({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Gmail Label
+              {t("companies.gmailLabel")}
             </label>
             <input
               type="text"
@@ -280,7 +280,7 @@ function CompanyForm({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Telegram Group ID
+              {t("companies.telegramGroup")}
             </label>
             <input
               type="text"
@@ -306,7 +306,7 @@ function CompanyForm({
               htmlFor="company_active"
               className="text-sm text-slate-700"
             >
-              Active
+              {t("common.active")}
             </label>
           </div>
 
@@ -322,14 +322,14 @@ function CompanyForm({
               onClick={onClose}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("common.saving") : t("common.save")}
             </button>
           </div>
         </form>
@@ -341,11 +341,13 @@ function CompanyForm({
 function MembersModal({
   company,
   allPeople,
+  t,
   onClose,
   onUpdate,
 }: {
   company: CompanyWithMembers;
   allPeople: Person[];
+  t: (key: string) => string;
   onClose: () => void;
   onUpdate: () => void;
 }) {
@@ -379,7 +381,7 @@ function MembersModal({
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            Members of {company.name}
+            {t("companies.membersOf").replace("{name}", company.name)}
           </h2>
           <button
             onClick={onClose}
@@ -392,10 +394,10 @@ function MembersModal({
         {/* Current Members */}
         <div className="mb-4">
           <h3 className="text-sm font-medium text-slate-500 mb-2">
-            Current Members
+            {t("companies.currentMembers")}
           </h3>
           {company.members?.length === 0 ? (
-            <p className="text-sm text-slate-400">No members yet</p>
+            <p className="text-sm text-slate-400">{t("companies.noMembers")}</p>
           ) : (
             <div className="space-y-1">
               {company.members?.map((member) => (
@@ -426,7 +428,7 @@ function MembersModal({
         {nonMembers.length > 0 && (
           <div>
             <h3 className="text-sm font-medium text-slate-500 mb-2">
-              Add Members
+              {t("companies.addMembers")}
             </h3>
             <div className="space-y-1">
               {nonMembers.map((person) => (
@@ -458,7 +460,7 @@ function MembersModal({
             onClick={onClose}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            Done
+            {t("common.done")}
           </button>
         </div>
       </div>
