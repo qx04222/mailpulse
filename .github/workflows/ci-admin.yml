@@ -1,0 +1,26 @@
+name: Admin CI
+
+on:
+  push:
+    paths: ['admin/**']
+  pull_request:
+    paths: ['admin/**']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install & Build
+        run: |
+          cd admin
+          npm ci
+          npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+          SUPABASE_SERVICE_KEY: placeholder
+          ADMIN_PASSWORD: placeholder

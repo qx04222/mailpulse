@@ -1,0 +1,9 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python -m src.entrypoint"
+restartPolicyType = "ALWAYS"
+
+[nixpacks]
+aptPkgs = ["fonts-noto-cjk"]

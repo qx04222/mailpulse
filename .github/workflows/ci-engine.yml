@@ -1,0 +1,24 @@
+name: Engine CI
+
+on:
+  push:
+    paths: ['engine/**']
+  pull_request:
+    paths: ['engine/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          cd engine
+          pip install -e ".[test]"
+      - name: Run tests
+        run: |
+          cd engine
+          python -m pytest tests/ -v
