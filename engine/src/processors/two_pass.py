@@ -208,7 +208,15 @@ async def generate_company_digest(
     返回 (structured_data: dict, telegram_brief: str, action_items: list[dict], scored: list[dict])
     """
     deduped = _dedup_by_thread(items)
-    scored = await asyncio.gather(*[score_email(item) for item in deduped])
+    # 分批打分，避免 429 限速（每批 10 个，间隔 2 秒）
+    scored = []
+    batch_size = 10
+    for i in range(0, len(deduped), batch_size):
+        batch = deduped[i:i + batch_size]
+        batch_results = await asyncio.gather(*[score_email(item) for item in batch])
+        scored.extend(batch_results)
+        if i + batch_size < len(deduped):
+            await asyncio.sleep(2)
     scored = list(scored)
 
     # 成员信息
