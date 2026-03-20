@@ -1,5 +1,6 @@
 """
-统一入口：Telegram Bot + 定时 Digest + 手动触发轮询
+统一入口：Telegram Bot + 从 DB 加载定时任务 + 手动触发轮询
+所有推送计划从后台 digest_schedules 表读取，不硬编码。
 python -m src.entrypoint
 """
 import asyncio
@@ -18,21 +19,116 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+scheduler = AsyncIOScheduler()
 
-async def scheduled_digest():
-    """定时触发的摘要任务"""
-    logger.info("Scheduled digest triggered")
+
+async def execute_schedule(schedule_id: str):
+    """执行一个推送计划"""
     try:
-        await run_all()
+        resp = db.table("digest_schedules") \
+            .select("*, companies(*)") \
+            .eq("id", schedule_id) \
+            .single() \
+            .execute()
+        schedule = resp.data
+        if not schedule:
+            return
+
+        company_id = schedule.get("company_id")
+        logger.info(f"Schedule triggered: {schedule['name']}")
+
+        # 更新 last_run
+        from datetime import datetime, timezone
+        db.table("digest_schedules").update({
+            "last_run_at": datetime.now(timezone.utc).isoformat(),
+            "last_run_status": "running",
+        }).eq("id", schedule_id).execute()
+
+        if company_id:
+            companies = load_companies()
+            company = next((c for c in companies if c["id"] == company_id), None)
+            if company:
+                result = await run_company(company)
+                logger.info(f"Schedule done: {result['company']} ({result['emails']} emails)")
+        else:
+            # 所有公司
+            await run_all()
+
+        db.table("digest_schedules").update({
+            "last_run_status": "completed",
+        }).eq("id", schedule_id).execute()
+
     except Exception as e:
-        logger.error(f"Scheduled digest failed: {e}")
+        logger.error(f"Schedule {schedule_id} failed: {e}")
+        db.table("digest_schedules").update({
+            "last_run_status": f"failed: {str(e)[:200]}",
+        }).eq("id", schedule_id).execute()
+
+
+def _parse_cron(cron_expr: str) -> dict:
+    """解析 cron 表达式为 APScheduler CronTrigger 参数"""
+    parts = cron_expr.strip().split()
+    if len(parts) != 5:
+        raise ValueError(f"Invalid cron: {cron_expr}")
+    return {
+        "minute": parts[0],
+        "hour": parts[1],
+        "day": parts[2],
+        "month": parts[3],
+        "day_of_week": parts[4],
+    }
+
+
+def load_schedules_from_db():
+    """从 digest_schedules 表加载所有活跃计划，注册到 scheduler"""
+    resp = db.table("digest_schedules") \
+        .select("id, name, cron_expression, timezone, is_active") \
+        .eq("is_active", True) \
+        .execute()
+
+    schedules = resp.data or []
+    registered = 0
+
+    for s in schedules:
+        job_id = f"schedule_{s['id']}"
+        # 先移除旧的（如果有）
+        existing = scheduler.get_job(job_id)
+        if existing:
+            scheduler.remove_job(job_id)
+
+        try:
+            cron_params = _parse_cron(s["cron_expression"])
+            tz = s.get("timezone") or "America/Toronto"
+
+            scheduler.add_job(
+                execute_schedule,
+                CronTrigger(timezone=tz, **cron_params),
+                args=[s["id"]],
+                id=job_id,
+                name=s["name"],
+            )
+            registered += 1
+            logger.info(f"  Registered: {s['name']} ({s['cron_expression']} {tz})")
+        except Exception as e:
+            logger.error(f"  Failed to register {s['name']}: {e}")
+
+    logger.info(f"Loaded {registered}/{len(schedules)} schedules from DB")
+    return registered
+
+
+async def reload_schedules():
+    """每 5 分钟重新加载推送计划（后台修改后自动生效）"""
+    try:
+        load_schedules_from_db()
+    except Exception as e:
+        logger.error(f"Reload schedules error: {e}")
 
 
 async def poll_manual_triggers():
-    """每 15 秒检查 manual_triggers 表，处理手动触发请求"""
+    """每 15 秒检查 manual_triggers 表"""
     try:
         resp = db.table("manual_triggers") \
-            .select("*, digest_schedules(*)") \
+            .select("*") \
             .eq("status", "pending") \
             .order("created_at") \
             .limit(1) \
@@ -46,13 +142,10 @@ async def poll_manual_triggers():
         company_id = trigger.get("company_id")
 
         logger.info(f"Manual trigger found: {trigger_id}")
-
-        # 标记为 running
         db.table("manual_triggers").update({"status": "running"}).eq("id", trigger_id).execute()
 
         try:
             if company_id:
-                # 跑单个公司
                 companies = load_companies()
                 company = next((c for c in companies if c["id"] == company_id), None)
                 if company:
@@ -61,12 +154,12 @@ async def poll_manual_triggers():
                 else:
                     raise ValueError(f"Company {company_id} not found")
             else:
-                # 跑所有公司
                 await run_all()
 
+            from datetime import datetime, timezone
             db.table("manual_triggers").update({
                 "status": "completed",
-                "completed_at": "now()",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", trigger_id).execute()
 
         except Exception as e:
@@ -80,23 +173,12 @@ async def poll_manual_triggers():
         logger.error(f"Trigger poll error: {e}")
 
 
-async def schedule_from_db():
-    """从 digest_schedules 表加载定时任务（未来扩展用）"""
-    # TODO: 从 DB 读取 digest_schedules 动态注册 cron jobs
-    pass
-
-
 async def main():
-    # 定时任务：默认 Mon/Thu 08:00
-    scheduler = AsyncIOScheduler(timezone="America/Toronto")
-    scheduler.add_job(
-        scheduled_digest,
-        CronTrigger(day_of_week="mon,thu", hour=8, minute=0),
-        id="email_digest",
-        name="Email Digest Cron",
-    )
+    # 从 DB 加载推送计划
+    logger.info("Loading schedules from database...")
+    load_schedules_from_db()
 
-    # 手动触发轮询：每 15 秒检查一次
+    # 手动触发轮询：每 15 秒
     scheduler.add_job(
         poll_manual_triggers,
         "interval",
@@ -105,8 +187,17 @@ async def main():
         name="Manual Trigger Poll",
     )
 
+    # 定期重新加载推送计划：每 5 分钟
+    scheduler.add_job(
+        reload_schedules,
+        "interval",
+        minutes=5,
+        id="reload_schedules",
+        name="Reload Schedules from DB",
+    )
+
     scheduler.start()
-    logger.info("Scheduler started: Cron + Manual trigger polling (15s)")
+    logger.info("Scheduler started (DB-driven + manual trigger polling)")
 
     # 运行 Bot
     app = create_bot_app()
