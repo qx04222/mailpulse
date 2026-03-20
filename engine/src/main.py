@@ -134,7 +134,13 @@ async def run_company(company: Dict[str, Any]) -> Dict[str, Any]:
                 from .storage.emails import get_email_by_gmail_id
                 existing_email = get_email_by_gmail_id(item.id)
                 if existing_email:
-                    email_records.append(existing_email)
+                    # 包装成和新邮件一样的格式，保持下游代码兼容
+                    email_records.append({
+                        "item": item,
+                        "email_row": existing_email,
+                        "assigned_to_id": existing_email.get("assigned_to_id"),
+                        "skipped": True,
+                    })
                     continue
 
                 sender_email = _parse_sender_email(item.sender)
