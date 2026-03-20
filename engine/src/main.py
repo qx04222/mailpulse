@@ -388,14 +388,12 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
             except Exception as e:
                 print(f"  -> Action item save error: {e}")
 
-        # 7. AI structured analysis (Sonnet) — build a compat company object
-        company_compat = _build_company_compat(company)
-        structured_data, telegram_brief, _, _ = await generate_company_digest(
+        # 7. 报告生成 v2：线程聚合 + 分组小报告 + 合并
+        from .processors.report_generator import generate_full_report
+        full_text, structured_data, telegram_brief = await generate_full_report(
+            company_id=company_id,
             company_name=company_name,
-            items=items,
-            followup_section=followup_section,
             lookback_days=settings.digest_lookback_days,
-            company=company_compat,
         )
 
         # 7b. Cache analysis in ai_company_analyses
@@ -432,11 +430,11 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
         except Exception as e:
             print(f"  -> DOCX report error: {e}")
 
-        # 9. Generate PDF report (backup)
+        # 9. Generate PDF report (backup, use full_text)
         try:
             pdf_bytes = generate_report_pdf(
                 company_name=company_name,
-                digest_text=telegram_brief,
+                digest_text=full_text if full_text else telegram_brief,
                 date_range=date_range,
                 action_items=action_items_to_save,
             )
