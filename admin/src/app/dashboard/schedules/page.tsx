@@ -417,7 +417,7 @@ function ScheduleForm({
   const [targetPersonId, setTargetPersonId] = useState(
     schedule?.target_person_id ?? ""
   );
-  const [reportType, setReportType] = useState(
+  const [reportType, setReportType] = useState<"brief" | "full_docx" | "full_pdf" | "brief_with_docx" | "sync_only">(
     schedule?.report_type ?? "brief"
   );
   const [includeSections, setIncludeSections] = useState<string[]>(
