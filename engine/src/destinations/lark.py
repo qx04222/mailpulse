@@ -225,9 +225,26 @@ def send_file_message(chat_id: str, file_key: str) -> bool:
 def send_document(chat_id: str, file_bytes: bytes, filename: str) -> bool:
     """
     Upload a file then send it as a message. Convenience wrapper.
+    Auto-detects file_type from filename extension.
     """
-    file_key = upload_file(file_bytes, filename, file_type="stream")
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    type_map = {
+        "pdf": "pdf",
+        "doc": "doc",
+        "docx": "doc",
+        "xls": "xls",
+        "xlsx": "xls",
+        "ppt": "ppt",
+        "pptx": "ppt",
+        "mp4": "mp4",
+        "opus": "opus",
+    }
+    file_type = type_map.get(ext, "stream")
+    print(f"[Lark] Uploading {filename} ({len(file_bytes)} bytes, type={file_type})")
+
+    file_key = upload_file(file_bytes, filename, file_type=file_type)
     if not file_key:
+        print(f"[Lark] File upload failed for {filename}, cannot send document")
         return False
     return send_file_message(chat_id, file_key)
 

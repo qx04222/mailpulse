@@ -421,6 +421,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
         date_range = _date_range(settings.digest_lookback_days)
         docx_url = ""
         pdf_url = ""
+        docx_bytes = None
 
         try:
             docx_bytes = generate_report_docx(structured_data, company_name, date_range)
