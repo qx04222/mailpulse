@@ -69,11 +69,21 @@ def aggregate_by_thread(emails: List[Dict]) -> List[Dict]:
         max_score = max((e.get("score") or 0) for e in sorted_emails)
         has_action = any(e.get("action_needed") for e in sorted_emails)
 
+        # Last inbound/outbound timestamps
+        last_inbound_at = inbound[-1].get("received_at", "") if inbound else ""
+        last_outbound_at = outbound[-1].get("received_at", "") if outbound else ""
+        last_inbound_from = inbound[-1].get("sender_name", "") or inbound[-1].get("sender_email", "") if inbound else ""
+
         aggregated.append({
             "thread_id": tid,
             "subject": first.get("subject", ""),
             "emails": sorted_emails,  # 保留所有邮件用于 Haiku 摘要
             "latest": latest,
+            "first_email_at": first.get("received_at", ""),
+            "last_email_at": latest.get("received_at", ""),
+            "last_inbound_at": last_inbound_at,
+            "last_outbound_at": last_outbound_at,
+            "last_inbound_from": last_inbound_from,
             "email_count": len(sorted_emails),
             "inbound_count": len(inbound),
             "outbound_count": len(outbound),
@@ -81,6 +91,7 @@ def aggregate_by_thread(emails: List[Dict]) -> List[Dict]:
             "has_action": has_action,
             "assigned_to_id": latest.get("assigned_to_id"),
             "client_name": latest.get("client_name", ""),
+            "client_email": latest.get("sender_email", "") if latest.get("direction") == "inbound" else (inbound[-1].get("sender_email", "") if inbound else ""),
             "direction": latest.get("direction", ""),
         })
 

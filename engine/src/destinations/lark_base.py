@@ -106,6 +106,7 @@ def update_record(
 THREAD_TABLE_FIELDS = [
     {"field_name": "thread_id", "type": 1},        # text
     {"field_name": "客户", "type": 1},              # text
+    {"field_name": "客户邮箱", "type": 1},          # text
     {"field_name": "主题", "type": 1},              # text
     {"field_name": "状态", "type": 3,               # single select
      "property": {"options": [
@@ -123,7 +124,12 @@ THREAD_TABLE_FIELDS = [
     {"field_name": "负责人", "type": 1},            # text
     {"field_name": "摘要", "type": 1},              # text
     {"field_name": "邮件数", "type": 2},            # number
+    {"field_name": "收件数", "type": 2},            # number
+    {"field_name": "发件数", "type": 2},            # number
+    {"field_name": "首封邮件", "type": 5},          # date
     {"field_name": "最后活动", "type": 5},          # date
+    {"field_name": "客户最后回复", "type": 5},      # date
+    {"field_name": "我方最后发出", "type": 5},      # date
     {"field_name": "方向", "type": 3,               # single select
      "property": {"options": [
          {"name": "客户来信"},
@@ -157,6 +163,21 @@ def create_thread_table(app_token: str, table_name: str = "邮件线程") -> Opt
 # High-level sync with upsert
 # ══════════════════════════════════════════════════════════════
 
+def _parse_ts(date_str: str) -> Optional[int]:
+    """Parse a date string to millisecond timestamp for Lark Base."""
+    if not date_str:
+        return None
+    try:
+        from datetime import datetime
+        if "T" in date_str:
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        else:
+            dt = datetime.strptime(date_str[:19], "%Y-%m-%d %H:%M:%S")
+        return int(dt.timestamp() * 1000)
+    except Exception:
+        return None
+
+
 def _build_thread_fields(t: Dict[str, Any], people_map: Dict[str, str]) -> Dict[str, Any]:
     """Convert a thread dict to Lark Base field values."""
     assignee_id = t.get("assigned_to_id")
@@ -165,32 +186,34 @@ def _build_thread_fields(t: Dict[str, Any], people_map: Dict[str, str]) -> Dict[
     direction_raw = t.get("direction", "")
     direction = "客户来信" if direction_raw == "inbound" else ("我方发出" if direction_raw == "outbound" else "")
 
-    last_activity = t.get("latest", {}).get("received_at", "")
-    # Lark date field needs millisecond timestamp
-    last_activity_ts = None
-    if last_activity:
-        try:
-            from datetime import datetime
-            if "T" in last_activity:
-                dt = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
-            else:
-                dt = datetime.strptime(last_activity[:19], "%Y-%m-%d %H:%M:%S")
-            last_activity_ts = int(dt.timestamp() * 1000)
-        except Exception:
-            pass
-
     fields: Dict[str, Any] = {
         "thread_id": t.get("thread_id", t.get("gmail_thread_id", "")),
         "客户": t.get("client_name", "") or t.get("subject", ""),
+        "客户邮箱": t.get("client_email", ""),
         "主题": t.get("subject", ""),
         "状态": _score_to_status_cn(score),
         "优先级": _score_to_priority_cn(score),
         "负责人": assignee_name,
         "摘要": (t.get("thread_summary", "") or "")[:500],
         "邮件数": t.get("email_count", 0),
+        "收件数": t.get("inbound_count", 0),
+        "发件数": t.get("outbound_count", 0),
     }
-    if last_activity_ts:
-        fields["最后活动"] = last_activity_ts
+
+    # Time fields
+    first_ts = _parse_ts(t.get("first_email_at", ""))
+    last_ts = _parse_ts(t.get("last_email_at", "") or t.get("latest", {}).get("received_at", ""))
+    inbound_ts = _parse_ts(t.get("last_inbound_at", ""))
+    outbound_ts = _parse_ts(t.get("last_outbound_at", ""))
+
+    if first_ts:
+        fields["首封邮件"] = first_ts
+    if last_ts:
+        fields["最后活动"] = last_ts
+    if inbound_ts:
+        fields["客户最后回复"] = inbound_ts
+    if outbound_ts:
+        fields["我方最后发出"] = outbound_ts
     if direction:
         fields["方向"] = direction
 
