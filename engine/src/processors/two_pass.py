@@ -148,27 +148,29 @@ def _dedup_by_thread(items: list[RawItem]) -> list[RawItem]:
     return result
 
 
-def _scored_to_json(scored_items: list) -> str:
-    """将打分后的邮件转为简洁 JSON 供 Sonnet 分析"""
+def _scored_to_json(scored_items: list, max_items: int = 30) -> str:
+    """将打分后的邮件转为简洁 JSON 供 Sonnet 分析。
+    只取 top N 高优先邮件，避免上下文过长导致输出截断。
+    """
+    # 按 score 降序排列，只取 top N
+    sorted_items = sorted(scored_items, key=lambda x: x.get("score", 0), reverse=True)
+    top_items = sorted_items[:max_items]
+
     entries = []
-    for s in scored_items:
+    for s in top_items:
         item = s["item"]
         entries.append({
             "sender": item.sender,
-            "recipients": item.recipients[:5],
             "subject": item.subject,
-            "body_preview": item.body[:600],
+            "body_preview": item.body[:200],
             "date": item.received_at.strftime("%Y-%m-%d %H:%M"),
             "bucket": item.metadata.get("bucket", "inbox"),
-            "thread_id": item.metadata.get("thread_id", ""),
             "score": s["score"],
             "reason": s["reason"],
             "one_line": s["one_line"],
             "action_needed": s.get("action_needed", False),
             "suggested_assignee": s.get("suggested_assignee_email"),
             "client_name": s.get("client_name", ""),
-            "project_address": s.get("project_address"),
-            "product_type": s.get("product_type"),
         })
     return json.dumps(entries, ensure_ascii=False, indent=1)
 
@@ -242,24 +244,43 @@ async def generate_company_digest(
 
     resp = client.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=4000,
+        max_tokens=8000,
         messages=[{"role": "user", "content": prompt}],
     )
 
     structured_data = _parse_structured_json(resp.content[0].text)
 
-    # fallback: 如果 JSON 解析失败，构建基本结构
+    # fallback: 如果 JSON 解析失败，用打分数据构建干净的摘要
     if not structured_data:
+        # 生成可读的 fallback 摘要
+        high = [s for s in scored if s.get("score", 0) >= 4]
+        medium = [s for s in scored if s.get("score", 0) == 3]
+        highlights = f"本期共 {len(items)} 封邮件，{len(high)} 封高优先，{len(medium)} 封需关注。"
+        if high:
+            top3 = high[:3]
+            highlights += " 重点: " + "; ".join(
+                f"{s['item'].subject[:30]}({s.get('reason', '')})" for s in top3
+            )
+
         structured_data = {
             "overview": {
                 "total_emails": len(items),
                 "period": date_range,
                 "company": company_name,
-                "highlights": resp.content[0].text[:200],
+                "highlights": highlights,
                 "per_person_stats": [],
             },
             "clients": [],
-            "priority_actions": [],
+            "priority_actions": [
+                {
+                    "priority": "high",
+                    "action": s.get("reason", s["item"].subject),
+                    "assigned_to": s.get("suggested_assignee_email", ""),
+                    "client": s.get("client_name", ""),
+                    "deadline": None,
+                }
+                for s in high[:10]
+            ],
             "followup_update": {"resolved": [], "overdue": [], "still_pending": []},
             "trash_spam_review": [],
         }
