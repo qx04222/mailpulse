@@ -399,6 +399,7 @@ async def generate_full_report(
         "trash_spam_review": [],
         "group_reports": group_reports,
         "full_text": full_text,
+        "threads_raw": threads,  # Full thread data for Lark Base sync
     }
 
     return full_text, structured_data, telegram_brief

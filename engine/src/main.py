@@ -626,10 +626,19 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 lark_base_table_id = company.get("lark_base_table_id", "")
                 if lark_base_app_token and lark_base_table_id:
                     from .processors.report_generator import get_people_map as _get_people_map
+                    # Use threads_raw (full thread data) for Base sync
+                    base_threads = structured_data.get("threads_raw", [])
+                    # Enrich with db_thread_id from threads table
+                    for bt in base_threads:
+                        gmail_tid = bt.get("thread_id", "")
+                        if gmail_tid:
+                            db_thread = get_thread_by_gmail_id(gmail_tid)
+                            if db_thread:
+                                bt["db_thread_id"] = db_thread["id"]
                     synced = sync_threads_to_base(
                         app_token=lark_base_app_token,
                         table_id=lark_base_table_id,
-                        threads=structured_data.get("priority_actions", []),
+                        threads=base_threads,
                         people_map=_get_people_map(),
                         company_id=company_id,
                     )
@@ -640,9 +649,10 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 lark_calendar_id = company.get("lark_calendar_id", "")
                 if lark_calendar_id:
                     from .processors.report_generator import get_people_map as _get_people_map_cal
+                    cal_threads = structured_data.get("threads_raw", [])
                     cal_count = sync_followups_to_calendar(
                         calendar_id=lark_calendar_id,
-                        threads=structured_data.get("priority_actions", []),
+                        threads=cal_threads,
                         action_items=action_items_to_save,
                         company_id=company_id,
                         company_name=company_name,
