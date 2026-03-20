@@ -18,6 +18,9 @@ export interface Company {
   gmail_label: string;
   telegram_group_id: string | null;
   lark_group_id: string | null;
+  lark_base_app_token: string | null;
+  lark_base_table_id: string | null;
+  lark_calendar_id: string | null;
   logo_url: string | null;
   is_active: boolean;
   created_at: string;

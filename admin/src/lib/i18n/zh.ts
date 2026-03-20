@@ -280,6 +280,9 @@ const zh: Record<string, string> = {
   "lark.noChats": "Bot 未加入任何群组",
   "lark.saveSuccess": "保存成功",
   "lark.saveError": "保存失败",
+  "lark.baseSyncDesc": "将邮件线程同步到 Lark 多维表格，实现看板式查看和管理。为每个公司配置 App Token 和 Table ID。",
+  "lark.calendarSyncDesc": "为高优先级线程和有截止日期的待办事项自动创建日历跟进事件。",
+  "lark.calendarId": "日历 ID",
 
   "sla.title": "SLA 管理",
   "sla.firstResponse": "首次响应时间",

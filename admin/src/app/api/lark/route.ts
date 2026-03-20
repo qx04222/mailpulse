@@ -31,7 +31,7 @@ export async function GET() {
 
   const { data: companies } = await supabase
     .from("companies")
-    .select("id, name, lark_group_id, is_active")
+    .select("id, name, lark_group_id, lark_base_app_token, lark_base_table_id, lark_calendar_id, is_active")
     .eq("is_active", true)
     .order("name");
 
@@ -95,7 +95,13 @@ export async function PUT(request: Request) {
   const supabase = createAdminClient();
   const body = await request.json();
   const { companies } = body as {
-    companies: Array<{ id: string; lark_group_id: string | null }>;
+    companies: Array<{
+      id: string;
+      lark_group_id: string | null;
+      lark_base_app_token?: string | null;
+      lark_base_table_id?: string | null;
+      lark_calendar_id?: string | null;
+    }>;
   };
 
   if (!companies || !Array.isArray(companies)) {
@@ -109,7 +115,12 @@ export async function PUT(request: Request) {
   for (const c of companies) {
     const { error } = await supabase
       .from("companies")
-      .update({ lark_group_id: c.lark_group_id || null })
+      .update({
+        lark_group_id: c.lark_group_id || null,
+        lark_base_app_token: c.lark_base_app_token || null,
+        lark_base_table_id: c.lark_base_table_id || null,
+        lark_calendar_id: c.lark_calendar_id || null,
+      })
       .eq("id", c.id);
 
     if (error) {

@@ -13,6 +13,9 @@ interface CompanyMapping {
   id: string;
   name: string;
   lark_group_id: string | null;
+  lark_base_app_token: string | null;
+  lark_base_table_id: string | null;
+  lark_calendar_id: string | null;
 }
 
 interface ConnectionStatus {
@@ -65,10 +68,10 @@ export default function LarkPage() {
     setTesting(false);
   }
 
-  function updateGroupId(companyId: string, value: string) {
+  function updateField(companyId: string, field: keyof CompanyMapping, value: string) {
     setCompanies((prev) =>
       prev.map((c) =>
-        c.id === companyId ? { ...c, lark_group_id: value || null } : c
+        c.id === companyId ? { ...c, [field]: value || null } : c
       )
     );
   }
@@ -84,6 +87,9 @@ export default function LarkPage() {
           companies: companies.map((c) => ({
             id: c.id,
             lark_group_id: c.lark_group_id,
+            lark_base_app_token: c.lark_base_app_token,
+            lark_base_table_id: c.lark_base_table_id,
+            lark_calendar_id: c.lark_calendar_id,
           })),
         }),
       });
@@ -249,7 +255,7 @@ export default function LarkPage() {
                     type="text"
                     value={company.lark_group_id || ""}
                     onChange={(e) =>
-                      updateGroupId(company.id, e.target.value)
+                      updateField(company.id, "lark_group_id", e.target.value)
                     }
                     placeholder={t("lark.larkGroupId")}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
@@ -292,51 +298,95 @@ export default function LarkPage() {
         </div>
       </div>
 
-      {/* Lark Base Sync Settings (placeholder) */}
+      {/* Lark Base Sync Settings */}
       <div className="rounded-xl border border-slate-200 bg-white p-5 mb-6">
         <h2 className="text-base font-semibold text-slate-900 mb-4">
           {t("lark.baseSync")}
         </h2>
-        <p className="text-sm text-slate-400 mb-4">
-          Sync thread data to a Lark Base (Bitable) table for structured
-          viewing. Configure per-company app_token and table_id in the database.
+        <p className="text-sm text-slate-500 mb-4">
+          {t("lark.baseSyncDesc")}
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              {t("lark.appToken")}
-            </label>
-            <input
-              type="text"
-              disabled
-              placeholder="Configure in database"
-              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            />
+        {companies.length > 0 && (
+          <div className="space-y-3">
+            {companies.map((company) => (
+              <div
+                key={`base-${company.id}`}
+                className="rounded-lg border border-slate-100 p-3"
+              >
+                <p className="text-sm font-medium text-slate-800 mb-2">
+                  {company.name}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      {t("lark.appToken")}
+                    </label>
+                    <input
+                      type="text"
+                      value={company.lark_base_app_token || ""}
+                      onChange={(e) =>
+                        updateField(company.id, "lark_base_app_token", e.target.value)
+                      }
+                      placeholder="bascnXXXXXXXXXX"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      {t("lark.tableId")}
+                    </label>
+                    <input
+                      type="text"
+                      value={company.lark_base_table_id || ""}
+                      onChange={(e) =>
+                        updateField(company.id, "lark_base_table_id", e.target.value)
+                      }
+                      placeholder="tblXXXXXXXXXXXX"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              {t("lark.tableId")}
-            </label>
-            <input
-              type="text"
-              disabled
-              placeholder="Configure in database"
-              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Calendar Sync Settings (placeholder) */}
+      {/* Calendar Sync Settings */}
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="text-base font-semibold text-slate-900 mb-4">
           {t("lark.calendarSync")}
         </h2>
-        <p className="text-sm text-slate-400">
-          Calendar events can be created automatically from high-priority threads
-          via Lark card action buttons. This feature uses the bot&apos;s calendar
-          API access.
+        <p className="text-sm text-slate-500 mb-4">
+          {t("lark.calendarSyncDesc")}
         </p>
+        {companies.length > 0 && (
+          <div className="space-y-3">
+            {companies.map((company) => (
+              <div
+                key={`cal-${company.id}`}
+                className="flex items-center gap-4 rounded-lg border border-slate-100 p-3"
+              >
+                <div className="w-40">
+                  <p className="text-sm font-medium text-slate-800">
+                    {company.name}
+                  </p>
+                </div>
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={company.lark_calendar_id || ""}
+                    onChange={(e) =>
+                      updateField(company.id, "lark_calendar_id", e.target.value)
+                    }
+                    placeholder={t("lark.calendarId")}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

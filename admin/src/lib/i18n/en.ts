@@ -280,6 +280,9 @@ const en: Record<string, string> = {
   "lark.noChats": "Bot has not joined any groups",
   "lark.saveSuccess": "Saved successfully",
   "lark.saveError": "Save failed",
+  "lark.baseSyncDesc": "Sync email threads to Lark Base tables for kanban-style viewing. Configure App Token and Table ID per company.",
+  "lark.calendarSyncDesc": "Auto-create follow-up calendar events for high-priority threads and action items with due dates.",
+  "lark.calendarId": "Calendar ID",
 
   "sla.title": "SLA Management",
   "sla.firstResponse": "First Response Time",

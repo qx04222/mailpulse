@@ -65,7 +65,8 @@ from .destinations.lark_cards import (
     build_daily_digest_card,
     build_client_thread_card,
 )
-from .destinations.lark_base import sync_threads_to_base
+from .destinations.lark_base import sync_threads_to_base, create_thread_table
+from .destinations.lark_calendar import sync_followups_to_calendar
 
 gmail = GmailSource()
 
@@ -620,7 +621,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     if doc_ok:
                         print(f"  -> Lark DOCX sent to group")
 
-                # Optional: Sync threads to Lark Base
+                # Sync threads to Lark Base (多维表格)
                 lark_base_app_token = company.get("lark_base_app_token", "")
                 lark_base_table_id = company.get("lark_base_table_id", "")
                 if lark_base_app_token and lark_base_table_id:
@@ -630,9 +631,25 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                         table_id=lark_base_table_id,
                         threads=structured_data.get("priority_actions", []),
                         people_map=_get_people_map(),
+                        company_id=company_id,
                     )
                     if synced:
                         print(f"  -> Lark Base: {synced} records synced")
+
+                # Sync follow-ups to Lark Calendar (日历)
+                lark_calendar_id = company.get("lark_calendar_id", "")
+                if lark_calendar_id:
+                    from .processors.report_generator import get_people_map as _get_people_map_cal
+                    cal_count = sync_followups_to_calendar(
+                        calendar_id=lark_calendar_id,
+                        threads=structured_data.get("priority_actions", []),
+                        action_items=action_items_to_save,
+                        company_id=company_id,
+                        company_name=company_name,
+                        people_map=_get_people_map_cal(),
+                    )
+                    if cal_count:
+                        print(f"  -> Lark Calendar: {cal_count} events created")
 
             except Exception as e:
                 print(f"  -> Lark push error: {e}")
