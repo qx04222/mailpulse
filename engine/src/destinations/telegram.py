@@ -14,11 +14,18 @@ def send_message(chat_id: str, text: str) -> bool:
 
     for chunk in chunks:
         try:
+            # 先尝试 Markdown 格式
             resp = httpx.post(url, json={
                 "chat_id": chat_id,
                 "text": chunk,
                 "parse_mode": "Markdown",
             }, timeout=30)
+            if resp.status_code == 400:
+                # Markdown 解析失败，去掉格式重试
+                resp = httpx.post(url, json={
+                    "chat_id": chat_id,
+                    "text": chunk,
+                }, timeout=30)
             resp.raise_for_status()
         except Exception as e:
             print(f"[Telegram] Error sending to {chat_id}: {e}")
