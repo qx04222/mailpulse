@@ -56,7 +56,7 @@ from .storage.digest_runs import create_run, complete_run, fail_run
 from .storage.events import create_event
 from .storage.audit import log_action
 
-from .destinations.telegram import send_message
+from .destinations.telegram import send_message, send_document
 from .destinations.docx_report import generate_report_docx
 from .destinations.pdf_report import generate_report_pdf
 from .destinations.supabase_upload import upload_report
@@ -524,12 +524,20 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
         except Exception:
             pass
 
-        # 12. Push Telegram group summary
+        # 12. Push Telegram group summary + DOCX attachment
         if telegram_group_id:
-            msg = telegram_brief
-            if docx_url:
-                msg += f"\n\U0001F4CE [完整报告下载]({docx_url})"
-            success = send_message(telegram_group_id, msg)
+            # 先发文字摘要
+            success = send_message(telegram_group_id, telegram_brief)
+            # 再发 DOCX 报告作为附件（直接下载，不用链接）
+            if docx_bytes:
+                doc_ok = send_document(
+                    telegram_group_id,
+                    docx_bytes,
+                    filename=f"{company_name}_report_{date_range.replace('/', '-')}.docx",
+                    caption=f"{company_name} 完整周报",
+                )
+                if doc_ok:
+                    print(f"  -> DOCX sent to group")
             stats["telegram_delivered"] = success
             print(f"  -> Company group: {'sent' if success else 'failed'}")
 
