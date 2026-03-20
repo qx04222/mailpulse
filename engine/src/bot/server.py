@@ -156,6 +156,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Error processing query: {str(e)[:100]}")
 
 
+async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Return the chat ID of the current chat."""
+    chat = update.message.chat
+    chat_type = chat.type
+    title = chat.title or chat.username or "private"
+    await update.message.reply_text(
+        f"Chat ID: `{chat.id}`\nType: {chat_type}\nTitle: {title}",
+        parse_mode="Markdown",
+    )
+
+
+async def cmd_bind(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bind current group to a company. Usage: /bind Arcview"""
+    if update.message.chat.type not in ("group", "supergroup"):
+        await update.message.reply_text("This command only works in group chats.")
+        return
+
+    company_name = " ".join(context.args) if context.args else None
+    if not company_name:
+        await update.message.reply_text("Usage: /bind <company name>\nExample: /bind Arcview")
+        return
+
+    chat_id = str(update.message.chat.id)
+
+    # Find company
+    from .query import find_company
+    company = find_company(company_name)
+    if not company:
+        await update.message.reply_text(f"Company not found: {company_name}")
+        return
+
+    # Update company telegram_group_id
+    from ..storage.db import db
+    db.table("companies").update({"telegram_group_id": chat_id}).eq("id", company["id"]).execute()
+
+    await update.message.reply_text(
+        f"Bound this group to *{company['name']}*\nChat ID: `{chat_id}`",
+        parse_mode="Markdown",
+    )
+
+
 # -- Entry point ------------------------------------------------------
 
 def create_bot_app() -> Application:
@@ -166,6 +207,8 @@ def create_bot_app() -> Application:
     app.add_handler(CommandHandler("start", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("report", cmd_report))
+    app.add_handler(CommandHandler("chatid", cmd_chatid))
+    app.add_handler(CommandHandler("bind", cmd_bind))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     return app
