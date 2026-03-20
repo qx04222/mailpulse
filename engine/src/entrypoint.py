@@ -8,7 +8,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from .main import run_all, run_company
+from .main import run_all, run_company, sync_all
 from .config import load_companies
 from .storage.db import db
 from .bot.server import create_bot_app
@@ -35,24 +35,37 @@ async def execute_schedule(schedule_id: str):
             return
 
         company_id = schedule.get("company_id")
-        logger.info(f"Schedule triggered: {schedule['name']}")
+        report_type = schedule.get("report_type", "brief")
+        is_sync = report_type == "sync_only"
 
-        # 更新 last_run
+        logger.info(f"Schedule triggered: {schedule['name']} ({'sync' if is_sync else 'full'})")
+
         from datetime import datetime, timezone
         db.table("digest_schedules").update({
             "last_run_at": datetime.now(timezone.utc).isoformat(),
             "last_run_status": "running",
         }).eq("id", schedule_id).execute()
 
-        if company_id:
-            companies = load_companies()
-            company = next((c for c in companies if c["id"] == company_id), None)
-            if company:
-                result = await run_company(company)
-                logger.info(f"Schedule done: {result['company']} ({result['emails']} emails)")
+        if is_sync:
+            # 仅同步：拉邮件 + AI 打分 + 入库
+            if company_id:
+                companies = load_companies()
+                company = next((c for c in companies if c["id"] == company_id), None)
+                if company:
+                    result = await run_company(company, sync_only=True)
+                    logger.info(f"Sync done: {result['company']} ({result['emails']} emails)")
+            else:
+                await sync_all()
         else:
-            # 所有公司
-            await run_all()
+            # 完整流程：同步 + 分析 + 报告 + 推送
+            if company_id:
+                companies = load_companies()
+                company = next((c for c in companies if c["id"] == company_id), None)
+                if company:
+                    result = await run_company(company)
+                    logger.info(f"Schedule done: {result['company']} ({result['emails']} emails)")
+            else:
+                await run_all()
 
         db.table("digest_schedules").update({
             "last_run_status": "completed",

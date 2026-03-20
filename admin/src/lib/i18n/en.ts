@@ -229,6 +229,7 @@ const en: Record<string, string> = {
   "schedules.reportTypes.brief_with_docx": "Brief + DOCX",
   "schedules.reportTypes.full_docx": "Full DOCX",
   "schedules.reportTypes.full_pdf": "Full PDF",
+  "schedules.reportTypes.sync_only": "Data Sync Only (no push)",
   "schedules.sections": "Include Sections",
   "schedules.lookbackDays": "Lookback Days",
   "schedules.lastRun": "Last Run",

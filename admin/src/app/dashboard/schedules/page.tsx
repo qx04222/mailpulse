@@ -659,9 +659,12 @@ function ScheduleForm({
             </label>
             <select
               value={reportType}
-              onChange={(e) => setReportType(e.target.value as "brief" | "full_docx" | "full_pdf" | "brief_with_docx")}
+              onChange={(e) => setReportType(e.target.value as "brief" | "full_docx" | "full_pdf" | "brief_with_docx" | "sync_only")}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
+              <option value="sync_only">
+                {t("schedules.reportTypes.sync_only")}
+              </option>
               <option value="brief">
                 {t("schedules.reportTypes.brief")}
               </option>

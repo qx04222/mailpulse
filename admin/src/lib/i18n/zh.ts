@@ -229,6 +229,7 @@ const zh: Record<string, string> = {
   "schedules.reportTypes.brief_with_docx": "简要 + DOCX",
   "schedules.reportTypes.full_docx": "完整 DOCX",
   "schedules.reportTypes.full_pdf": "完整 PDF",
+  "schedules.reportTypes.sync_only": "仅数据同步（不推送）",
   "schedules.sections": "包含模块",
   "schedules.lookbackDays": "回溯天数",
   "schedules.lastRun": "上次运行",

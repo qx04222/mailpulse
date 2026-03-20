@@ -72,15 +72,19 @@ def _extract_recipients(item: RawItem) -> tuple:
     return item.recipients[:10], []
 
 
-async def run_company(company: Dict[str, Any]) -> Dict[str, Any]:
+async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[str, Any]:
     """
     Full digest pipeline for a single company.
+
+    sync_only=True: 只拉取邮件 + AI 打分 + 入库，不生成报告不推送
+    sync_only=False: 完整流程（拉取 + 分析 + 报告 + 推送）
 
     1.  Create digest_run record
     2.  Fetch emails from Gmail
     3.  For each email: detect direction, extract client, upsert thread, upsert email
     4.  AI scoring (Haiku) for new emails
     5.  Update email records with scores
+    --- sync_only stops here ---
     6.  AI structured analysis (Sonnet)
     7.  Cache analysis in ai_company_analyses
     8.  Generate DOCX + PDF reports
@@ -296,6 +300,19 @@ async def run_company(company: Dict[str, Any]) -> Dict[str, Any]:
         # Count high priority
         high_priority = [s for s in all_scored if s.get("score", 0) >= 4]
         stats["high_priority"] = len(high_priority)
+
+        # sync_only 模式：入库 + 打分完成，跳过报告和推送
+        if sync_only:
+            complete_run(run_id, stats)
+            print(f"  -> Sync complete ({stats['new_emails']} new, {stats['high_priority']} high)")
+            return {
+                "company": company_name,
+                "company_id": company_id,
+                "emails": stats["total_emails"],
+                "high_priority": stats["high_priority"],
+                "action_items": 0,
+                "sync_only": True,
+            }
 
         # 6. Check followup status (compare pending action_items with new threads)
         pending_items = get_pending_items(company_id)
@@ -708,6 +725,26 @@ async def run_all():
             print(f"Done: {r['company']} ({r['emails']} emails, {r['high_priority']} high, {r['action_items']} actions)")
 
     print(f"\nRun complete.")
+
+
+async def sync_all():
+    """每日数据同步：只拉取邮件 + AI 打分 + 入库，不生成报告不推送"""
+    print(f"\n{'='*50}")
+    print(f"Email Sync — {datetime.now().strftime('%Y-%m-%d %H:%M %Z')}")
+    print(f"{'='*50}")
+
+    reload_config()
+    companies = load_companies()
+    print(f"[Sync] {len(companies)} companies")
+
+    for company in companies:
+        try:
+            result = await run_company(company, sync_only=True)
+            print(f"Synced: {result['company']} ({result['emails']} emails)")
+        except Exception as e:
+            print(f"ERROR syncing {company['name']}: {e}")
+
+    print(f"\nSync complete.")
 
 
 if __name__ == "__main__":
