@@ -78,7 +78,7 @@ export interface DigestSchedule {
   target_type: "group" | "person" | "all_members";
   target_group_id: string | null;
   target_person_id: string | null;
-  report_type: "brief" | "full_docx" | "full_pdf" | "brief_with_docx";
+  report_type: "brief" | "full_docx" | "full_pdf" | "brief_with_docx" | "sync_only";
   include_sections: string[];
   lookback_days: number;
   is_active: boolean;
