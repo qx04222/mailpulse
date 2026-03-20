@@ -24,11 +24,11 @@ export async function GET() {
 export async function POST(request: Request) {
   const supabase = createAdminClient();
   const body = await request.json();
-  const { name, gmail_label, telegram_group_id, is_active } = body;
+  const { name, gmail_label, telegram_group_id, lark_group_id, is_active } = body;
 
   const { data, error } = await supabase
     .from("companies")
-    .insert({ name, gmail_label, telegram_group_id, is_active: is_active ?? true })
+    .insert({ name, gmail_label, telegram_group_id, lark_group_id, is_active: is_active ?? true })
     .select()
     .single();
 
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const supabase = createAdminClient();
   const body = await request.json();
-  const { id, name, gmail_label, telegram_group_id, is_active } = body;
+  const { id, name, gmail_label, telegram_group_id, lark_group_id, is_active } = body;
 
   if (!id) {
     return Response.json({ error: "id is required" }, { status: 400 });
@@ -50,7 +50,7 @@ export async function PUT(request: Request) {
 
   const { data, error } = await supabase
     .from("companies")
-    .update({ name, gmail_label, telegram_group_id, is_active })
+    .update({ name, gmail_label, telegram_group_id, lark_group_id, is_active })
     .eq("id", id)
     .select()
     .single();

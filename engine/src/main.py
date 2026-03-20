@@ -60,6 +60,12 @@ from .destinations.telegram import send_message, send_document
 from .destinations.docx_report import generate_report_docx
 from .destinations.pdf_report import generate_report_pdf
 from .destinations.supabase_upload import upload_report
+from .destinations import lark as lark_client
+from .destinations.lark_cards import (
+    build_daily_digest_card,
+    build_client_thread_card,
+)
+from .destinations.lark_base import sync_threads_to_base
 
 gmail = GmailSource()
 
@@ -538,6 +544,97 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     print(f"  -> DOCX sent to group")
             stats["telegram_delivered"] = success
             print(f"  -> Company group: {'sent' if success else 'failed'}")
+
+        # 12b. Push Lark group cards + DOCX attachment
+        lark_group_id = company.get("lark_group_id", "")
+        if lark_group_id and settings.lark_enabled and settings.lark_app_id:
+            try:
+                # Build and send digest card
+                overview = structured_data.get("overview", {})
+                digest_card = build_daily_digest_card(
+                    company_name=company_name,
+                    date_range=date_range,
+                    total_emails=overview.get("total_emails", len(items)),
+                    total_threads=len(structured_data.get("priority_actions", [])),
+                    high_priority=stats["high_priority"],
+                    actionable=len(structured_data.get("priority_actions", [])),
+                    low_priority=0,
+                    group_reports=structured_data.get("group_reports", {}),
+                    top_actions=structured_data.get("priority_actions", [])[:5],
+                )
+                card_msg_id = lark_client.send_card_message(lark_group_id, digest_card)
+                if card_msg_id:
+                    print(f"  -> Lark digest card sent")
+
+                    # Track in lark_messages table
+                    try:
+                        from .storage.db import db as _lark_db
+                        _lark_db.table("lark_messages").insert({
+                            "message_id": card_msg_id,
+                            "chat_id": lark_group_id,
+                            "company_id": company_id,
+                            "message_type": "digest_card",
+                            "card_data": digest_card,
+                        }).execute()
+                    except Exception:
+                        pass
+
+                # Send individual cards for high-priority threads
+                for s in high_priority[:5]:
+                    item = s["item"]
+                    gmail_thread_id = item.metadata.get("thread_id", item.id)
+                    thread = get_thread_by_gmail_id(gmail_thread_id)
+                    thread_id = thread["id"] if thread else ""
+                    from .processors.report_generator import get_people_map
+                    people_map_local = get_people_map()
+
+                    assignee_id_hp = s.get("suggested_assignee_email", "")
+                    assignee_name_hp = ""
+                    for rec in email_records:
+                        if rec["item"].id == item.id:
+                            aid = rec.get("assigned_to_id")
+                            if aid:
+                                assignee_name_hp = people_map_local.get(aid, "")
+                            break
+
+                    thread_card = build_client_thread_card(
+                        thread_id=thread_id,
+                        subject=item.subject,
+                        client_name=s.get("client_name", ""),
+                        score=s.get("score", 0),
+                        summary=s.get("one_line", ""),
+                        assignee=assignee_name_hp,
+                        email_count=1,
+                        direction=s.get("direction", ""),
+                    )
+                    lark_client.send_card_message(lark_group_id, thread_card)
+
+                # Send DOCX as file message
+                if docx_bytes:
+                    doc_ok = lark_client.send_document(
+                        lark_group_id,
+                        docx_bytes,
+                        filename=f"{company_name}_report_{date_range.replace('/', '-')}.docx",
+                    )
+                    if doc_ok:
+                        print(f"  -> Lark DOCX sent to group")
+
+                # Optional: Sync threads to Lark Base
+                lark_base_app_token = company.get("lark_base_app_token", "")
+                lark_base_table_id = company.get("lark_base_table_id", "")
+                if lark_base_app_token and lark_base_table_id:
+                    from .processors.report_generator import get_people_map as _get_people_map
+                    synced = sync_threads_to_base(
+                        app_token=lark_base_app_token,
+                        table_id=lark_base_table_id,
+                        threads=structured_data.get("priority_actions", []),
+                        people_map=_get_people_map(),
+                    )
+                    if synced:
+                        print(f"  -> Lark Base: {synced} records synced")
+
+            except Exception as e:
+                print(f"  -> Lark push error: {e}")
 
         # 13. Push personal summaries
         for member in members:

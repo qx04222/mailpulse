@@ -21,6 +21,7 @@ import {
   Shield,
   CalendarClock,
   Settings,
+  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
 
@@ -60,6 +61,7 @@ const navSections: NavSection[] = [
       { href: "/dashboard/sla", labelKey: "nav.sla", icon: Shield },
       { href: "/dashboard/schedules", labelKey: "nav.schedules", icon: CalendarClock },
       { href: "/dashboard/notifications", labelKey: "nav.notifications", icon: BellRing },
+      { href: "/dashboard/lark", labelKey: "nav.lark", icon: MessageSquare },
     ],
   },
   {

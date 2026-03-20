@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     digest_lookback_days: int = 3
     followup_overdue_days: int = 7
 
+    # Lark integration
+    lark_app_id: str = ""
+    lark_app_secret: str = ""
+    lark_base_url: str = "https://open.larksuite.com"
+    lark_enabled: bool = True  # can disable Lark push globally
+
     class Config:
         env_file = ".env"
 

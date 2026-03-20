@@ -3,6 +3,7 @@ export interface Person {
   name: string;
   email: string;
   telegram_user_id: string | null;
+  lark_user_id: string | null;
   role: "owner" | "manager" | "member";
   is_active: boolean;
   avatar_url: string | null;
@@ -16,6 +17,7 @@ export interface Company {
   name: string;
   gmail_label: string;
   telegram_group_id: string | null;
+  lark_group_id: string | null;
   logo_url: string | null;
   is_active: boolean;
   created_at: string;
