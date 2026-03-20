@@ -104,7 +104,7 @@ def update_record(
 # ══════════════════════════════════════════════════════════════
 
 THREAD_TABLE_FIELDS = [
-    {"field_name": "thread_id", "type": 1},        # text
+    # Note: primary field "标题" is auto-created, we just write to it
     {"field_name": "客户", "type": 1},              # text
     {"field_name": "客户邮箱", "type": 1},          # text
     {"field_name": "主题", "type": 1},              # text
@@ -186,15 +186,24 @@ def _build_thread_fields(t: Dict[str, Any], people_map: Dict[str, str]) -> Dict[
     direction_raw = t.get("direction", "")
     direction = "客户来信" if direction_raw == "inbound" else ("我方发出" if direction_raw == "outbound" else "")
 
+    # Simplify summary: strip table/markdown formatting, remove fields already in columns
+    raw_summary = t.get("thread_summary", "") or ""
+    summary = _simplify_summary(raw_summary)
+
+    client_name = t.get("client_name", "") or ""
+    subject = t.get("subject", "") or ""
+    # 标题 = primary field, shows "客户 - 主题" for quick identification
+    title = f"{client_name} - {subject[:40]}" if client_name else subject[:50]
+
     fields: Dict[str, Any] = {
-        "thread_id": t.get("thread_id", t.get("gmail_thread_id", "")),
-        "客户": t.get("client_name", "") or t.get("subject", ""),
+        "标题": title,
+        "客户": client_name,
         "客户邮箱": t.get("client_email", ""),
-        "主题": t.get("subject", ""),
+        "主题": subject,
         "状态": _score_to_status_cn(score),
         "优先级": _score_to_priority_cn(score),
         "负责人": assignee_name,
-        "摘要": (t.get("thread_summary", "") or "")[:500],
+        "摘要": summary[:500],
         "邮件数": t.get("email_count", 0),
         "收件数": t.get("inbound_count", 0),
         "发件数": t.get("outbound_count", 0),
@@ -297,6 +306,53 @@ def sync_threads_to_base(
 
     print(f"[Lark Base] Sync done: {created} created, {updated} updated")
     return created + updated
+
+
+def _simplify_summary(raw: str) -> str:
+    """
+    Strip markdown tables and redundant fields from AI summary.
+    Keep only the actionable content (讨论内容, 建议操作, 关键细节).
+    """
+    import re
+    if not raw:
+        return ""
+
+    lines = raw.split("\n")
+    result = []
+    skip_fields = {"客户", "联系人", "客户/联系人", "负责人", "优先级", "状态", "邮件数", "方向"}
+
+    in_table = False
+    for line in lines:
+        stripped = line.strip()
+
+        # Skip markdown table rows
+        if stripped.startswith("|") and "|" in stripped[1:]:
+            # Check if it's a key-value table row with redundant info
+            cells = [c.strip().strip("*").strip() for c in stripped.split("|") if c.strip()]
+            if len(cells) >= 2 and any(k in cells[0] for k in skip_fields):
+                continue
+            # Skip table header separators
+            if all(c.replace("-", "").replace(":", "").strip() == "" for c in cells):
+                continue
+            in_table = True
+            continue
+
+        # Skip markdown headings that are just "邮件摘要"
+        if stripped in ("# 邮件摘要", "## 邮件摘要", "**邮件摘要**"):
+            continue
+
+        # Skip empty lines after tables
+        if in_table and not stripped:
+            in_table = False
+            continue
+        in_table = False
+
+        if stripped:
+            # Clean up remaining markdown bold markers for readability
+            cleaned = re.sub(r'\*\*([^*]+)\*\*', r'\1', stripped)
+            result.append(cleaned)
+
+    return "\n".join(result).strip()
 
 
 def _score_to_status_cn(score: int) -> str:
