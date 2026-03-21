@@ -67,6 +67,7 @@ from .destinations.lark_cards import (
 )
 from .destinations.lark_base import sync_threads_to_base, create_thread_table
 from .destinations.lark_calendar import sync_followups_to_calendar
+from .destinations.lark_calendar_acl import sync_calendar_acl
 
 gmail = GmailSource()
 
@@ -865,6 +866,17 @@ async def run_all():
             print(f"ERROR: {r}")
         else:
             print(f"Done: {r['company']} ({r['emails']} emails, {r['high_priority']} high, {r['action_items']} actions)")
+
+    # Step 2: Sync calendar ACL permissions based on company_members
+    if settings.lark_enabled:
+        try:
+            print("\n[Calendar ACL] Syncing calendar permissions...")
+            from .storage.db import db
+            cm_resp = db.table("company_members").select("person_id, company_id").execute()
+            company_members = cm_resp.data or []
+            sync_calendar_acl(companies, people, company_members)
+        except Exception as e:
+            print(f"[Calendar ACL] Error: {e}")
 
     print(f"\nRun complete.")
 
