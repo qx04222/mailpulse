@@ -239,7 +239,8 @@ async def main():
     if settings.lark_enabled and settings.lark_app_id:
         from aiohttp import web
         callback_app = create_callback_app()
-        callback_port = int(getattr(settings, "lark_callback_port", 8080))
+        import os
+        callback_port = int(os.environ.get("PORT", getattr(settings, "lark_callback_port", 8080)))
         runner = web.AppRunner(callback_app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", callback_port)
