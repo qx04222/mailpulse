@@ -134,3 +134,154 @@ export async function PUT(request: Request) {
 
   return Response.json({ success: true });
 }
+
+const LARK_TENANT_DOMAIN = "https://ajppbhsdfjyk.jp.larksuite.com";
+
+export async function PATCH(request: Request) {
+  const body = await request.json();
+  const { action } = body as { action: string };
+
+  if (action === "create_tabs") {
+    const { chat_id, company_name, app_token, calendar_id } = body as {
+      chat_id: string;
+      company_name: string;
+      app_token?: string;
+      calendar_id?: string;
+    };
+
+    if (!chat_id) {
+      return Response.json(
+        { error: "chat_id is required" },
+        { status: 400 }
+      );
+    }
+
+    try {
+      const token = await getLarkToken();
+      const tabs: Array<{
+        tab_name: string;
+        tab_type: string;
+        tab_content: { url: string };
+      }> = [];
+
+      if (app_token) {
+        tabs.push({
+          tab_name: `\u{1F4CA}邮件看板`,
+          tab_type: "url",
+          tab_content: {
+            url: `${LARK_TENANT_DOMAIN}/base/${app_token}`,
+          },
+        });
+      }
+
+      if (calendar_id) {
+        tabs.push({
+          tab_name: `\u{1F4C5}跟进日历`,
+          tab_type: "url",
+          tab_content: {
+            url: `${LARK_TENANT_DOMAIN}/calendar/${calendar_id}`,
+          },
+        });
+      }
+
+      if (tabs.length === 0) {
+        return Response.json(
+          { error: "No app_token or calendar_id provided" },
+          { status: 400 }
+        );
+      }
+
+      const resp = await fetch(
+        `${LARK_BASE_URL}/open-apis/im/v1/chats/${chat_id}/chat_tabs`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ chat_tabs: tabs }),
+        }
+      );
+
+      const data = await resp.json();
+      if (data.code !== 0) {
+        return Response.json(
+          { error: data.msg || "Failed to create tabs" },
+          { status: 500 }
+        );
+      }
+
+      return Response.json({
+        success: true,
+        tabs_created: tabs.length,
+        company: company_name,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unknown error";
+      return Response.json({ error: message }, { status: 500 });
+    }
+  }
+
+  if (action === "sync_status") {
+    const supabase = createAdminClient();
+
+    try {
+      const { data: baseRecords } = await supabase
+        .from("lark_base_sync")
+        .select("company_id, updated_at");
+
+      const { data: calendarRecords } = await supabase
+        .from("lark_calendar_events")
+        .select("company_id");
+
+      const stats: Record<
+        string,
+        {
+          base_count: number;
+          calendar_count: number;
+          last_sync: string | null;
+        }
+      > = {};
+
+      if (baseRecords) {
+        for (const row of baseRecords) {
+          if (!stats[row.company_id]) {
+            stats[row.company_id] = {
+              base_count: 0,
+              calendar_count: 0,
+              last_sync: null,
+            };
+          }
+          stats[row.company_id].base_count += 1;
+          const ts = row.updated_at as string;
+          if (
+            !stats[row.company_id].last_sync ||
+            ts > stats[row.company_id].last_sync!
+          ) {
+            stats[row.company_id].last_sync = ts;
+          }
+        }
+      }
+
+      if (calendarRecords) {
+        for (const row of calendarRecords) {
+          if (!stats[row.company_id]) {
+            stats[row.company_id] = {
+              base_count: 0,
+              calendar_count: 0,
+              last_sync: null,
+            };
+          }
+          stats[row.company_id].calendar_count += 1;
+        }
+      }
+
+      return Response.json({ stats });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unknown error";
+      return Response.json({ error: message }, { status: 500 });
+    }
+  }
+
+  return Response.json({ error: "Unknown action" }, { status: 400 });
+}
