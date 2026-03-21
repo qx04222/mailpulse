@@ -233,8 +233,7 @@ async def _send_test_card(request: web.Request) -> web.Response:
         test_item = db.table("action_items").insert({
             "title": "测试按钮卡片",
             "priority": "high",
-            "status": "open",
-            "source": "test",
+            "status": "pending",
         }).execute()
         item_id = test_item.data[0]["id"]
 
