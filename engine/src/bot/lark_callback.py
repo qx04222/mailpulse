@@ -59,7 +59,7 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
             info["title"] or item_id,
             "✅ 已处理",
             f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
-            "green", info,
+            "green", info, item_id=item_id,
         )
 
     elif action_type == "snooze":
@@ -75,7 +75,7 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
             info["title"] or item_id,
             "⏰ 稍后处理",
             f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
-            "yellow", info,
+            "yellow", info, item_id=item_id,
         )
 
     elif action_type == "claim":
@@ -96,8 +96,24 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
             info["title"] or item_id,
             "🙋 已认领",
             f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
-            "blue", info,
+            "blue", info, item_id=item_id,
         )
+
+    elif action_type == "undo":
+        try:
+            db.table("action_items").update({
+                "status": "pending",
+                "dm_acknowledged": False,
+                "dm_acknowledged_at": None,
+                "resolved_at": None,
+                "resolution_note": None,
+            }).eq("id", item_id).execute()
+        except Exception as e:
+            logger.warning(f"[Lark Card] DB error (undo): {e}")
+
+        logger.info(f"[Lark Card] Item {item_id} undone by {user_name}")
+        # Rebuild original card with action buttons
+        card = _original_card_with_buttons(info, item_id)
 
     if card:
         return P2CardActionTriggerResponse({
@@ -180,6 +196,7 @@ def _status_card(
     status_detail: str,
     color: str,
     info: Dict,
+    item_id: str = "",
 ) -> Dict:
     elements = []
     summary = f"**{original_title}**"
@@ -190,6 +207,21 @@ def _status_card(
     elements.append({"tag": "div", "text": {"tag": "lark_md", "content": summary}})
     elements.append({"tag": "hr"})
     elements.append({"tag": "div", "text": {"tag": "lark_md", "content": status_detail}})
+
+    # 撤销按钮
+    if item_id:
+        elements.append({
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "↩️ 撤销"},
+                    "type": "danger",
+                    "value": {"action": "undo", "item_id": item_id},
+                },
+            ],
+        })
+
     elements.append({"tag": "note", "elements": [
         {"tag": "plain_text", "content": f"MailPulse · {datetime.now().strftime('%Y-%m-%d %H:%M')}"}
     ]})
@@ -199,6 +231,50 @@ def _status_card(
         "header": {
             "title": {"tag": "plain_text", "content": f"{status_label} | {original_title[:40]}"},
             "template": color,
+        },
+        "elements": elements,
+    }
+
+
+def _original_card_with_buttons(info: Dict, item_id: str) -> Dict:
+    """Rebuild the card with action buttons (for undo)."""
+    elements = []
+    title = info.get("title", "")
+    summary = f"**{title}**"
+    if info.get("client"):
+        summary += f"\n客户：{info['client']}"
+    if info.get("company"):
+        summary += f"\n公司：{info['company']}"
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": summary}})
+    elements.append({"tag": "hr"})
+    elements.append({
+        "tag": "action",
+        "actions": [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "✅ 已处理"},
+                "type": "primary",
+                "value": {"action": "handled", "item_id": item_id},
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "⏰ 稍后处理"},
+                "type": "default",
+                "value": {"action": "snooze", "item_id": item_id},
+            },
+        ],
+    })
+    elements.append({"tag": "note", "elements": [
+        {"tag": "plain_text", "content": f"MailPulse · 已撤销 · {datetime.now().strftime('%Y-%m-%d %H:%M')}"}
+    ]})
+
+    priority = info.get("priority", "medium")
+    template = "red" if priority == "high" else "yellow"
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": f"📋 {title[:50]}"},
+            "template": template,
         },
         "elements": elements,
     }
