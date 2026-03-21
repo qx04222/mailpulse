@@ -1,7 +1,7 @@
 """
 Lark card action callback handler.
 Receives button click events from interactive cards.
-Updates the card via API to show action result.
+Returns updated card in callback response so Lark replaces it in-place.
 """
 import json
 import logging
@@ -12,7 +12,6 @@ from aiohttp import web
 
 from ..storage.db import db
 from ..storage.action_items import mark_resolved
-from ..destinations.lark import update_card
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +90,9 @@ async def handle_card_action(request: web.Request) -> web.Response:
 
 
 async def _process_card_action(body: Dict[str, Any]) -> web.Response:
-    """Process a card button click."""
+    """Process a card button click. Returns updated card in response."""
+    logger.info(f"[Lark Callback] Received body: {json.dumps(body, ensure_ascii=False)[:500]}")
+
     action = body.get("action", {})
     value_str = action.get("value", "{}")
     try:
@@ -104,8 +105,9 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
     open_id = body.get("open_id", "")
     user_name = _get_user_name(open_id)
 
-    # Get the message_id so we can update the card
-    message_id = body.get("open_message_id", "")
+    logger.info(f"[Lark Callback] action={action_type} item={item_id} user={user_name}")
+
+    card = None  # The updated card to return
 
     if action_type == "handled":
         try:
@@ -117,16 +119,13 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         except Exception as e:
             logger.warning(f"[Lark Callback] DB update error (handled): {e}")
 
-        # Update card to show handled status
-        if message_id:
-            info = _get_action_item_info(item_id)
-            update_card(message_id, _status_card(
-                info["title"] or item_id,
-                "✅ 已处理",
-                f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
-                "green", info,
-            ))
-
+        info = _get_action_item_info(item_id)
+        card = _status_card(
+            info["title"] or item_id,
+            "✅ 已处理",
+            f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
+            "green", info,
+        )
         logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
 
     elif action_type == "snooze":
@@ -137,15 +136,13 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         except Exception as e:
             logger.warning(f"[Lark Callback] DB update error (snooze): {e}")
 
-        if message_id:
-            info = _get_action_item_info(item_id)
-            update_card(message_id, _status_card(
-                info["title"] or item_id,
-                "⏰ 稍后处理",
-                f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
-                "yellow", info,
-            ))
-
+        info = _get_action_item_info(item_id)
+        card = _status_card(
+            info["title"] or item_id,
+            "⏰ 稍后处理",
+            f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
+            "yellow", info,
+        )
         logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
 
     elif action_type == "claim":
@@ -161,19 +158,21 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         except Exception as e:
             logger.warning(f"[Lark Callback] DB update error (claim): {e}")
 
-        if message_id:
-            info = _get_action_item_info(item_id)
-            update_card(message_id, _status_card(
-                info["title"] or item_id,
-                "🙋 已认领",
-                f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
-                "blue", info,
-            ))
-
+        info = _get_action_item_info(item_id)
+        card = _status_card(
+            info["title"] or item_id,
+            "🙋 已认领",
+            f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
+            "blue", info,
+        )
         logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
 
-    # Return empty 200 — card update is done via API
-    return web.Response(status=200)
+    # Return the updated card in response — Lark replaces the card in-place
+    if card:
+        logger.info(f"[Lark Callback] Returning updated card")
+        return web.json_response({"card": card})
+
+    return web.json_response({})
 
 
 def _get_user_name(open_id: str) -> str:

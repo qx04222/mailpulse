@@ -229,7 +229,6 @@ def update_card(message_id: str, card: Dict[str, Any]) -> bool:
     except Exception as e:
         print(f"[Lark] Error updating card {message_id}: {e}")
         return False
-        return None
 
 
 def upload_file(
