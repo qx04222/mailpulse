@@ -38,6 +38,7 @@ from .storage.emails import (
     _get_all_company_domains,
     _detect_is_reply,
     count_thread_emails,
+    detect_true_company,
 )
 from .storage.employee_discovery import discover_employees_from_email
 from .storage.threads import (
@@ -68,6 +69,7 @@ from .destinations.lark_cards import (
 from .destinations.lark_base import sync_threads_to_base, create_thread_table
 from .destinations.lark_calendar import sync_followups_to_calendar
 from .destinations.lark_calendar_acl import sync_calendar_acl
+from .processors.escalation import check_unacknowledged_dms
 
 gmail = GmailSource()
 
@@ -112,6 +114,18 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
     company_domains = _get_all_company_domains()
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting {company_name}...")
+
+    # 0. Check for unacknowledged DMs from previous runs (escalation safety net)
+    lark_group_id_early = company.get("lark_group_id", "")
+    if lark_group_id_early and settings.lark_enabled and settings.lark_app_id:
+        try:
+            check_unacknowledged_dms(
+                company_id=company_id,
+                company_name=company_name,
+                lark_group_id=lark_group_id_early,
+            )
+        except Exception as e:
+            print(f"  -> Escalation check error: {e}")
 
     # 1. Create digest run
     run_id = create_run(company_id, lookback_days=settings.digest_lookback_days)
@@ -190,10 +204,29 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     company_domains=company_domains,
                 )
 
-                # 3b. Upsert thread
+                # Smart assignment: use client history if no assignee yet
+                if not assigned_to_id and client_id:
+                    from .storage.clients import get_preferred_assignee
+                    assigned_to_id = get_preferred_assignee(client_id, company_id)
+
+                # 3b. Cross-company bridging detection
+                effective_company_id = company_id
+                bridged_from = None
+                true_cid, classification = detect_true_company(
+                    gmail_thread_id=gmail_thread_id,
+                    current_company_id=company_id,
+                    recipients=recipients_to + recipients_cc,
+                    company_domains=company_domains,
+                )
+                if true_cid != company_id:
+                    effective_company_id = true_cid
+                    bridged_from = company_id
+                    print(f"  -> Bridged: {item.subject[:40]} → {classification}")
+
+                # 3c. Upsert thread (using effective company)
                 thread = upsert_thread(
                     gmail_thread_id=gmail_thread_id,
-                    company_id=company_id,
+                    company_id=effective_company_id,
                     subject=item.subject,
                     direction=direction,
                     received_at=item.received_at,
@@ -202,12 +235,12 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 )
                 thread_id = thread.get("id")
 
-                # 3c. Upsert email record
+                # 3d. Upsert email record
                 email_row = upsert_email(
                     gmail_message_id=item.id,
                     gmail_thread_id=gmail_thread_id,
                     thread_id=thread_id,
-                    company_id=company_id,
+                    company_id=effective_company_id,
                     subject=item.subject,
                     sender=item.sender,
                     recipients_to=recipients_to,
@@ -221,6 +254,8 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     client_id=client_id,
                     assigned_to_id=assigned_to_id,
                     run_id=run_id,
+                    true_company_id=effective_company_id,
+                    bridged_from_company_id=bridged_from,
                 )
                 email_records.append({
                     "email_row": email_row,
@@ -259,8 +294,13 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 new_items_to_score.append(item)
 
         if new_items_to_score:
+            # Build team context for AI scoring
+            team_ctx = "\n".join(
+                f"- {m.get('name', '')} ({m.get('email', '')})"
+                for m in members if m.get("is_active") and m.get("person_type") != "shared_mailbox"
+            )
             scored = await asyncio.gather(
-                *[score_email(item) for item in new_items_to_score],
+                *[score_email(item, team_context=team_ctx) for item in new_items_to_score],
                 return_exceptions=True,
             )
             new_scored = [s for s in scored if isinstance(s, dict)]
@@ -574,6 +614,21 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 # person_id -> list of thread cards
                 personal_thread_cards: Dict[str, list] = {}
 
+                # Build action_item lookup: thread_id → action_item_id
+                _ai_lookup: Dict[str, str] = {}
+                try:
+                    from .storage.db import db as _db_ai
+                    _ai_resp = _db_ai.table("action_items") \
+                        .select("id, thread_id") \
+                        .eq("company_id", company_id) \
+                        .in_("status", ["pending", "in_progress", "overdue"]) \
+                        .execute()
+                    for _ai_row in (_ai_resp.data or []):
+                        if _ai_row.get("thread_id"):
+                            _ai_lookup[_ai_row["thread_id"]] = _ai_row["id"]
+                except Exception:
+                    pass
+
                 for s in high_priority[:10]:
                     item = s["item"]
                     gmail_thread_id = item.metadata.get("thread_id", item.id)
@@ -590,6 +645,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                                 assignee_name_hp = people_map_local.get(aid, "")
                             break
 
+                    action_item_id = _ai_lookup.get(thread_id, "")
                     thread_card = build_client_thread_card(
                         thread_id=thread_id,
                         subject=item.subject,
@@ -599,10 +655,13 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                         assignee=assignee_name_hp,
                         email_count=1,
                         direction=s.get("direction", ""),
+                        action_item_id=action_item_id,
                     )
 
                     if assignee_id_hp:
-                        personal_thread_cards.setdefault(assignee_id_hp, []).append(thread_card)
+                        personal_thread_cards.setdefault(assignee_id_hp, []).append(
+                            {"card": thread_card, "action_item_id": action_item_id}
+                        )
                     else:
                         # Unassigned high-priority → still send to group
                         lark_client.send_card_message(lark_group_id, thread_card)
@@ -691,25 +750,37 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
 
                 member_id = member.get("id", "")
                 lark_user_id = member.get("lark_user_id")
-                member_cards = personal_thread_cards.get(member_id, []) if personal_thread_cards else []
+                member_card_entries = personal_thread_cards.get(member_id, []) if personal_thread_cards else []
 
                 # Skip if nothing to send
-                if not personal_summary and not member_cards:
+                if not personal_summary and not member_card_entries:
                     continue
 
                 # Try Lark DM first
                 if lark_user_id and settings.lark_enabled and settings.lark_app_id:
                     from .destinations.lark import send_user_message, send_user_card
 
-                    # Send thread cards assigned to this person
-                    for card in member_cards:
-                        send_user_card(lark_user_id, card)
+                    # Send thread cards assigned to this person + track dm_sent_at
+                    for entry in member_card_entries:
+                        card = entry.get("card", entry) if isinstance(entry, dict) else entry
+                        msg_id = send_user_card(lark_user_id, card)
+                        # Track DM sent for escalation
+                        ai_id = entry.get("action_item_id") if isinstance(entry, dict) else None
+                        if ai_id and msg_id:
+                            try:
+                                from .storage.db import db as _dm_db
+                                _dm_db.table("action_items").update({
+                                    "dm_sent_at": datetime.now(timezone.utc).isoformat(),
+                                    "dm_message_id": msg_id,
+                                }).eq("id", ai_id).execute()
+                            except Exception:
+                                pass
 
                     # Send personal summary text
                     if personal_summary:
                         lark_ok = send_user_message(lark_user_id, personal_summary)
                         if lark_ok:
-                            print(f"  -> Personal Lark DM ({member['name']}): sent ({len(member_cards)} cards + summary)")
+                            print(f"  -> Personal Lark DM ({member['name']}): sent ({len(member_card_entries)} cards + summary)")
 
                 # Telegram fallback
                 telegram_user_id = member.get("telegram_user_id")

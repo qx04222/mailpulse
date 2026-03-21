@@ -99,8 +99,10 @@ def build_client_thread_card(
     assignee: str = "",
     email_count: int = 0,
     direction: str = "",
+    action_item_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """单个客户/线程卡片"""
+    """单个客户/线程卡片，带操作按钮"""
+    import json as json_mod
     template = "red" if score >= 5 else ("orange" if score >= 4 else "yellow")
     score_label = "🔴 紧急" if score >= 5 else ("🟠 重要" if score >= 4 else "🟡 关注")
 
@@ -122,11 +124,73 @@ def build_client_thread_card(
     # 摘要
     elements.append(_text(f"**AI 分析：**\n{summary}"))
 
+    # 操作按钮
+    if action_item_id:
+        elements.append({
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "✅ 已处理"},
+                    "type": "primary",
+                    "value": json_mod.dumps({"action": "handled", "item_id": action_item_id}),
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "⏰ 稍后处理"},
+                    "type": "default",
+                    "value": json_mod.dumps({"action": "snooze", "item_id": action_item_id}),
+                },
+            ],
+        })
+
     elements.append(_note(f"MailPulse · Thread {thread_id[:8]}"))
 
     return {
-        "config": {"wide_screen_mode": True},
+        "config": {"wide_screen_mode": True, "update_multi": True},
         "header": _header(f"{score_label} | {subject[:50]}", template),
+        "elements": elements,
+    }
+
+
+def build_escalation_card(
+    title: str,
+    assignee_name: str,
+    hours_overdue: int,
+    priority: str,
+    action_item_id: str,
+    client_name: str = "",
+    company_name: str = "",
+) -> Dict[str, Any]:
+    """未确认任务升级卡片 — 推到群里"""
+    import json as json_mod
+
+    elements = []
+    info = f"**原负责人：** {assignee_name}（{hours_overdue}h 未确认）\n"
+    info += f"**优先级：** {'🔴 高' if priority == 'high' else '🟡 中'}\n"
+    if client_name:
+        info += f"**客户：** {client_name}\n"
+    if company_name:
+        info += f"**公司：** {company_name}\n"
+    elements.append(_text(info))
+
+    elements.append({
+        "tag": "action",
+        "actions": [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "🙋 我来处理"},
+                "type": "primary",
+                "value": json_mod.dumps({"action": "claim", "item_id": action_item_id}),
+            },
+        ],
+    })
+
+    elements.append(_note(f"MailPulse 自动升级 · {datetime.now().strftime('%Y-%m-%d %H:%M')}"))
+
+    return {
+        "config": {"wide_screen_mode": True, "update_multi": True},
+        "header": _header(f"⚠️ 超时未处理 | {title[:50]}", "orange"),
         "elements": elements,
     }
 

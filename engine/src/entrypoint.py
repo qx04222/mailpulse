@@ -12,6 +12,7 @@ from .main import run_all, run_company, sync_all
 from .config import settings, load_companies
 from .storage.db import db
 from .bot.server import create_bot_app
+from .bot.lark_callback import create_callback_app
 
 logging.basicConfig(
     level=logging.INFO,
@@ -233,13 +234,25 @@ async def main():
             await app.shutdown()
     else:
         logger.info("Telegram disabled or no bot token — running scheduler only")
-        stop_event = asyncio.Event()
-        try:
-            await stop_event.wait()
-        except (KeyboardInterrupt, SystemExit):
-            logger.info("Shutting down...")
-        finally:
-            scheduler.shutdown()
+
+    # Start Lark callback server (for card button clicks)
+    if settings.lark_enabled and settings.lark_app_id:
+        from aiohttp import web
+        callback_app = create_callback_app()
+        callback_port = int(getattr(settings, "lark_callback_port", 8080))
+        runner = web.AppRunner(callback_app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", callback_port)
+        await site.start()
+        logger.info(f"Lark callback server running on port {callback_port}")
+
+    stop_event = asyncio.Event()
+    try:
+        await stop_event.wait()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutting down...")
+    finally:
+        scheduler.shutdown()
 
 
 if __name__ == "__main__":

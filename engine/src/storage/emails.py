@@ -60,6 +60,41 @@ def _detect_is_reply(subject: str, is_first_in_thread: bool) -> bool:
     return prefix.startswith("re:") or prefix.startswith("fwd:") or prefix.startswith("fw:")
 
 
+def detect_true_company(
+    gmail_thread_id: str,
+    current_company_id: str,
+    recipients: List[str],
+    company_domains: Dict[str, str],
+) -> tuple:
+    """
+    Detect the true company for an email based on thread history and recipient domains.
+    Returns (true_company_id, classification_source).
+
+    Rules (priority order):
+    1. Thread history: if this thread already exists under a different company → use that
+    2. Recipient domains: if To/CC contains a domain belonging to another company → use that
+    3. Fallback: use the current company from Gmail label
+    """
+    from .threads import get_thread_by_gmail_id
+
+    # Rule 1: Thread history — most reliable
+    existing_thread = get_thread_by_gmail_id(gmail_thread_id)
+    if existing_thread and existing_thread["company_id"] != current_company_id:
+        return existing_thread["company_id"], "thread_history"
+
+    # Rule 2: Recipient domains — check To/CC for company domain hints
+    for recip in recipients:
+        recip_lower = recip.lower().strip()
+        domain = recip_lower.split("@")[-1] if "@" in recip_lower else ""
+        if domain in company_domains:
+            detected = company_domains[domain]
+            if detected != current_company_id:
+                return detected, "recipient_domain"
+
+    # Rule 3: Fallback
+    return current_company_id, "gmail_label"
+
+
 def upsert_email(
     gmail_message_id: str,
     gmail_thread_id: str,
@@ -86,6 +121,8 @@ def upsert_email(
     project_address: Optional[str] = None,
     product_type: Optional[str] = None,
     run_id: Optional[str] = None,
+    true_company_id: Optional[str] = None,
+    bridged_from_company_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Insert or update an email record. Returns the row."""
     sender_email = _parse_sender_email(sender)
@@ -132,6 +169,10 @@ def upsert_email(
         data["product_type"] = product_type
     if run_id:
         data["run_id"] = run_id
+    if true_company_id:
+        data["true_company_id"] = true_company_id
+    if bridged_from_company_id:
+        data["bridged_from_company_id"] = bridged_from_company_id
 
     resp = db.table("emails").upsert(
         data, on_conflict="gmail_message_id"

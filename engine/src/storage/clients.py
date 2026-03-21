@@ -119,6 +119,38 @@ def get_client_by_email(email: str) -> Optional[Dict[str, Any]]:
     return resp.data[0] if resp.data else None
 
 
+def get_preferred_assignee(client_id: str, company_id: str) -> Optional[str]:
+    """
+    Find the most frequent assigned_to_id for this client's emails.
+    Returns the person_id who most often handles this client, or None.
+    """
+    try:
+        resp = db.table("emails") \
+            .select("assigned_to_id") \
+            .eq("client_id", client_id) \
+            .eq("company_id", company_id) \
+            .not_.is_("assigned_to_id", "null") \
+            .order("received_at", desc=True) \
+            .limit(20) \
+            .execute()
+
+        if not resp.data:
+            return None
+
+        # Count frequency
+        counts: Dict[str, int] = {}
+        for row in resp.data:
+            aid = row.get("assigned_to_id")
+            if aid:
+                counts[aid] = counts.get(aid, 0) + 1
+
+        if counts:
+            return max(counts, key=counts.get)
+    except Exception:
+        pass
+    return None
+
+
 def extract_client_from_email(
     sender_email: str,
     sender_name: str,
