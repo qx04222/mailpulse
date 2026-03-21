@@ -209,9 +209,90 @@ def _get_person_id(open_id: str) -> Optional[str]:
     return None
 
 
+async def _send_test_card(request: web.Request) -> web.Response:
+    """Send a test card with action buttons to verify callback flow."""
+    import json as json_mod
+    from ..destinations.lark import send_user_card
+
+    # Find first person with lark_user_id
+    try:
+        resp = db.table("people") \
+            .select("id, name, lark_user_id") \
+            .not_.is_("lark_user_id", "null") \
+            .limit(1) \
+            .execute()
+        if not resp.data:
+            return web.json_response({"error": "no user with lark_user_id"}, status=404)
+
+        person = resp.data[0]
+        open_id = person["lark_user_id"]
+        name = person.get("name", "Test User")
+
+        # Create a test action_item
+        from datetime import datetime, timezone
+        test_item = db.table("action_items").insert({
+            "title": "测试按钮卡片",
+            "priority": "high",
+            "status": "open",
+            "source": "test",
+        }).execute()
+        item_id = test_item.data[0]["id"]
+
+        # Build test card with buttons
+        card = {
+            "config": {"wide_screen_mode": True, "update_multi": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": "🧪 测试卡片 | 点击按钮验证"},
+                "template": "purple",
+            },
+            "elements": [
+                {"tag": "div", "text": {"tag": "lark_md", "content":
+                    f"**这是一张测试卡片**\n\n"
+                    f"发送给：{name}\n"
+                    f"Item ID：{item_id}\n\n"
+                    f"请点击下方按钮测试回调功能："}},
+                {"tag": "hr"},
+                {
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "✅ 已处理"},
+                            "type": "primary",
+                            "value": json_mod.dumps({"action": "handled", "item_id": item_id}),
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "⏰ 稍后处理"},
+                            "type": "default",
+                            "value": json_mod.dumps({"action": "snooze", "item_id": item_id}),
+                        },
+                    ],
+                },
+                {"tag": "note", "elements": [
+                    {"tag": "plain_text", "content": f"MailPulse Test · {datetime.now().strftime('%Y-%m-%d %H:%M')}"}
+                ]},
+            ],
+        }
+
+        msg_id = send_user_card(open_id, card)
+        logger.info(f"[Test] Sent test card to {name} ({open_id}), message_id={msg_id}")
+        return web.json_response({
+            "ok": True,
+            "sent_to": name,
+            "open_id": open_id,
+            "message_id": msg_id,
+            "item_id": item_id,
+        })
+    except Exception as e:
+        logger.error(f"[Test] Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 def create_callback_app() -> web.Application:
     """Create the aiohttp app for Lark callbacks."""
     app = web.Application()
     app.router.add_post("/lark/callback", handle_card_action)
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
+    app.router.add_get("/test-card", _send_test_card)
     return app
