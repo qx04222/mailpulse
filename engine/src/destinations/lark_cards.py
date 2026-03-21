@@ -102,7 +102,6 @@ def build_client_thread_card(
     action_item_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """单个客户/线程卡片，带操作按钮"""
-    import json as json_mod
     template = "red" if score >= 5 else ("orange" if score >= 4 else "yellow")
     score_label = "🔴 紧急" if score >= 5 else ("🟠 重要" if score >= 4 else "🟡 关注")
 
@@ -133,13 +132,13 @@ def build_client_thread_card(
                     "tag": "button",
                     "text": {"tag": "plain_text", "content": "✅ 已处理"},
                     "type": "primary",
-                    "value": json_mod.dumps({"action": "handled", "item_id": action_item_id}),
+                    "value": {"action": "handled", "item_id": action_item_id},
                 },
                 {
                     "tag": "button",
                     "text": {"tag": "plain_text", "content": "⏰ 稍后处理"},
                     "type": "default",
-                    "value": json_mod.dumps({"action": "snooze", "item_id": action_item_id}),
+                    "value": {"action": "snooze", "item_id": action_item_id},
                 },
             ],
         })
@@ -163,8 +162,6 @@ def build_escalation_card(
     company_name: str = "",
 ) -> Dict[str, Any]:
     """未确认任务升级卡片 — 推到群里"""
-    import json as json_mod
-
     elements = []
     info = f"**原负责人：** {assignee_name}（{hours_overdue}h 未确认）\n"
     info += f"**优先级：** {'🔴 高' if priority == 'high' else '🟡 中'}\n"
@@ -181,7 +178,7 @@ def build_escalation_card(
                 "tag": "button",
                 "text": {"tag": "plain_text", "content": "🙋 我来处理"},
                 "type": "primary",
-                "value": json_mod.dumps({"action": "claim", "item_id": action_item_id}),
+                "value": {"action": "claim", "item_id": action_item_id},
             },
         ],
     })

@@ -1,20 +1,143 @@
 """
-Lark card action callback handler.
-Receives button click events from interactive cards.
-Returns updated card in callback response so Lark replaces it in-place.
+Lark card action callback handler — uses lark-oapi SDK.
+Handles button clicks (已处理/稍后处理/认领) from interactive cards.
+Returns updated card to replace the original in-place.
 """
 import json
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
+import lark_oapi as lark
 from aiohttp import web
 
+from ..config import settings
 from ..storage.db import db
 from ..storage.action_items import mark_resolved
 
 logger = logging.getLogger(__name__)
 
+
+# ══════════════════════════════════════════════════════════════
+# SDK Card Action Handler
+# ══════════════════════════════════════════════════════════════
+
+def _handle_card_action(card: lark.Card) -> dict:
+    """
+    SDK CardActionHandler callback.
+    card.action.value is Dict[str, str] from button's value field.
+    card.open_id is the user who clicked.
+    Return a card dict to replace the original.
+    """
+    value = card.action.value or {}
+    action_type = value.get("action", "")
+    item_id = value.get("item_id", "")
+    open_id = card.open_id or ""
+    user_name = _get_user_name(open_id)
+
+    logger.info(f"[Lark Card] action={action_type} item={item_id} user={user_name} open_id={open_id}")
+
+    info = _get_action_item_info(item_id)
+
+    if action_type == "handled":
+        try:
+            mark_resolved(item_id, note=f"Handled by {user_name}")
+            db.table("action_items").update({
+                "dm_acknowledged": True,
+                "dm_acknowledged_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", item_id).execute()
+        except Exception as e:
+            logger.warning(f"[Lark Card] DB error (handled): {e}")
+
+        logger.info(f"[Lark Card] Item {item_id} handled by {user_name}")
+        return _status_card(
+            info["title"] or item_id,
+            "✅ 已处理",
+            f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
+            "green", info,
+        )
+
+    elif action_type == "snooze":
+        try:
+            db.table("action_items").update({
+                "dm_sent_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", item_id).execute()
+        except Exception as e:
+            logger.warning(f"[Lark Card] DB error (snooze): {e}")
+
+        logger.info(f"[Lark Card] Item {item_id} snoozed by {user_name}")
+        return _status_card(
+            info["title"] or item_id,
+            "⏰ 稍后处理",
+            f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
+            "yellow", info,
+        )
+
+    elif action_type == "claim":
+        try:
+            person_id = _get_person_id(open_id)
+            if person_id:
+                db.table("action_items").update({
+                    "assigned_to_id": person_id,
+                    "dm_acknowledged": True,
+                    "dm_acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                    "status": "in_progress",
+                }).eq("id", item_id).execute()
+        except Exception as e:
+            logger.warning(f"[Lark Card] DB error (claim): {e}")
+
+        logger.info(f"[Lark Card] Item {item_id} claimed by {user_name}")
+        return _status_card(
+            info["title"] or item_id,
+            "🙋 已认领",
+            f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
+            "blue", info,
+        )
+
+    logger.warning(f"[Lark Card] Unknown action: {action_type}")
+    return {}
+
+
+# Build the SDK handler
+_card_handler = lark.CardActionHandler.builder(
+    settings.lark_encrypt_key,
+    settings.lark_verification_token,
+    lark.LogLevel.DEBUG,
+).register(_handle_card_action).build()
+
+
+# ══════════════════════════════════════════════════════════════
+# aiohttp adapter (SDK handler expects RawRequest/RawResponse)
+# ══════════════════════════════════════════════════════════════
+
+async def handle_lark_callback(request: web.Request) -> web.Response:
+    """aiohttp handler that delegates to the SDK CardActionHandler."""
+    body = await request.read()
+    headers = dict(request.headers)
+
+    # Build SDK RawRequest
+    raw_req = lark.RawRequest()
+    raw_req.uri = str(request.url)
+    raw_req.body = body
+    raw_req.headers = headers
+
+    logger.info(f"[Lark Callback] Received: {body[:300].decode('utf-8', errors='replace')}")
+
+    # Delegate to SDK
+    raw_resp: lark.RawResponse = _card_handler.do(raw_req)
+
+    logger.info(f"[Lark Callback] Response status={raw_resp.status_code} body={raw_resp.content[:200] if raw_resp.content else b''}")
+
+    return web.Response(
+        status=raw_resp.status_code,
+        body=raw_resp.content,
+        headers=raw_resp.headers or {"Content-Type": "application/json"},
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+# Helper functions
+# ══════════════════════════════════════════════════════════════
 
 def _get_action_item_info(item_id: str) -> Dict:
     """Get action item details for building status card."""
@@ -44,17 +167,14 @@ def _status_card(
     color: str,
     info: Dict,
 ) -> Dict:
-    """Build a status card that shows what was done."""
+    """Build a replacement card showing what was done."""
     elements = []
-
-    # Original info summary
     summary = f"**{original_title}**"
     if info.get("client"):
         summary += f"\n客户：{info['client']}"
     if info.get("company"):
         summary += f"\n公司：{info['company']}"
     elements.append({"tag": "div", "text": {"tag": "lark_md", "content": summary}})
-
     elements.append({"tag": "hr"})
     elements.append({"tag": "div", "text": {"tag": "lark_md", "content": status_detail}})
     elements.append({"tag": "note", "elements": [
@@ -71,120 +191,11 @@ def _status_card(
     }
 
 
-async def handle_card_action(request: web.Request) -> web.Response:
-    """Handle Lark card action callback (button clicks)."""
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "invalid json"}, status=400)
-
-    # URL verification challenge
-    if body.get("type") == "url_verification":
-        return web.json_response({"challenge": body.get("challenge", "")})
-
-    # Card action event
-    if body.get("type") == "interactive":
-        return await _process_card_action(body)
-
-    return web.Response(status=200)
-
-
-async def _process_card_action(body: Dict[str, Any]) -> web.Response:
-    """Process a card button click. Returns updated card in response."""
-    logger.info(f"[Lark Callback] Received body: {json.dumps(body, ensure_ascii=False)[:500]}")
-
-    action = body.get("action", {})
-    value_str = action.get("value", "{}")
-    try:
-        value = json.loads(value_str) if isinstance(value_str, str) else value_str
-    except Exception:
-        value = {}
-
-    action_type = value.get("action", "")
-    item_id = value.get("item_id", "")
-    open_id = body.get("open_id", "")
-    user_name = _get_user_name(open_id)
-
-    logger.info(f"[Lark Callback] action={action_type} item={item_id} user={user_name}")
-
-    card = None  # The updated card to return
-
-    if action_type == "handled":
-        try:
-            mark_resolved(item_id, note=f"Handled by {user_name}")
-            db.table("action_items").update({
-                "dm_acknowledged": True,
-                "dm_acknowledged_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", item_id).execute()
-        except Exception as e:
-            logger.warning(f"[Lark Callback] DB update error (handled): {e}")
-
-        info = _get_action_item_info(item_id)
-        card = _status_card(
-            info["title"] or item_id,
-            "✅ 已处理",
-            f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
-            "green", info,
-        )
-        logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
-
-    elif action_type == "snooze":
-        try:
-            db.table("action_items").update({
-                "dm_sent_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", item_id).execute()
-        except Exception as e:
-            logger.warning(f"[Lark Callback] DB update error (snooze): {e}")
-
-        info = _get_action_item_info(item_id)
-        card = _status_card(
-            info["title"] or item_id,
-            "⏰ 稍后处理",
-            f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
-            "yellow", info,
-        )
-        logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
-
-    elif action_type == "claim":
-        try:
-            person_id = _get_person_id(open_id)
-            if person_id:
-                db.table("action_items").update({
-                    "assigned_to_id": person_id,
-                    "dm_acknowledged": True,
-                    "dm_acknowledged_at": datetime.now(timezone.utc).isoformat(),
-                    "status": "in_progress",
-                }).eq("id", item_id).execute()
-        except Exception as e:
-            logger.warning(f"[Lark Callback] DB update error (claim): {e}")
-
-        info = _get_action_item_info(item_id)
-        card = _status_card(
-            info["title"] or item_id,
-            "🙋 已认领",
-            f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
-            "blue", info,
-        )
-        logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
-
-    # Return the updated card in response — Lark replaces the card in-place
-    if card:
-        logger.info(f"[Lark Callback] Returning updated card")
-        return web.json_response({"card": card})
-
-    return web.json_response({})
-
-
 def _get_user_name(open_id: str) -> str:
-    """Get person name from open_id."""
     if not open_id:
         return "Unknown"
     try:
-        resp = db.table("people") \
-            .select("name") \
-            .eq("lark_user_id", open_id) \
-            .limit(1) \
-            .execute()
+        resp = db.table("people").select("name").eq("lark_user_id", open_id).limit(1).execute()
         if resp.data:
             return resp.data[0].get("name", "Unknown")
     except Exception:
@@ -193,15 +204,10 @@ def _get_user_name(open_id: str) -> str:
 
 
 def _get_person_id(open_id: str) -> Optional[str]:
-    """Get person UUID from open_id."""
     if not open_id:
         return None
     try:
-        resp = db.table("people") \
-            .select("id") \
-            .eq("lark_user_id", open_id) \
-            .limit(1) \
-            .execute()
+        resp = db.table("people").select("id").eq("lark_user_id", open_id).limit(1).execute()
         if resp.data:
             return resp.data[0].get("id")
     except Exception:
@@ -209,12 +215,14 @@ def _get_person_id(open_id: str) -> Optional[str]:
     return None
 
 
+# ══════════════════════════════════════════════════════════════
+# Test endpoint
+# ══════════════════════════════════════════════════════════════
+
 async def _send_test_card(request: web.Request) -> web.Response:
     """Send a test card with action buttons to verify callback flow."""
-    import json as json_mod
     from ..destinations.lark import send_user_card
 
-    # Find first person with lark_user_id
     try:
         resp = db.table("people") \
             .select("id, name, lark_user_id") \
@@ -228,14 +236,13 @@ async def _send_test_card(request: web.Request) -> web.Response:
         open_id = person["lark_user_id"]
         name = person.get("name", "Test User")
 
-        # Get first company for test data
+        # Get first company
         company_resp = db.table("companies").select("id").eq("is_active", True).limit(1).execute()
         if not company_resp.data:
             return web.json_response({"error": "no active company"}, status=404)
         company_id = company_resp.data[0]["id"]
 
-        # Create a test action_item
-        from datetime import datetime, timezone
+        # Create test action_item
         test_item = db.table("action_items").insert({
             "company_id": company_id,
             "title": "测试按钮卡片",
@@ -244,7 +251,7 @@ async def _send_test_card(request: web.Request) -> web.Response:
         }).execute()
         item_id = test_item.data[0]["id"]
 
-        # Build test card with buttons
+        # Build test card — value is Dict[str, str], NOT json.dumps
         card = {
             "config": {"wide_screen_mode": True, "update_multi": True},
             "header": {
@@ -265,13 +272,13 @@ async def _send_test_card(request: web.Request) -> web.Response:
                             "tag": "button",
                             "text": {"tag": "plain_text", "content": "✅ 已处理"},
                             "type": "primary",
-                            "value": json_mod.dumps({"action": "handled", "item_id": item_id}),
+                            "value": {"action": "handled", "item_id": item_id},
                         },
                         {
                             "tag": "button",
                             "text": {"tag": "plain_text", "content": "⏰ 稍后处理"},
                             "type": "default",
-                            "value": json_mod.dumps({"action": "snooze", "item_id": item_id}),
+                            "value": {"action": "snooze", "item_id": item_id},
                         },
                     ],
                 },
@@ -282,7 +289,7 @@ async def _send_test_card(request: web.Request) -> web.Response:
         }
 
         msg_id = send_user_card(open_id, card)
-        logger.info(f"[Test] Sent test card to {name} ({open_id}), message_id={msg_id}")
+        logger.info(f"[Test] Sent test card to {name} ({open_id}), msg_id={msg_id}")
         return web.json_response({
             "ok": True,
             "sent_to": name,
@@ -296,9 +303,9 @@ async def _send_test_card(request: web.Request) -> web.Response:
 
 
 def create_callback_app() -> web.Application:
-    """Create the aiohttp app for Lark callbacks."""
+    """Create the aiohttp app with SDK-powered callback handler."""
     app = web.Application()
-    app.router.add_post("/lark/callback", handle_card_action)
+    app.router.add_post("/lark/callback", handle_lark_callback)
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
     app.router.add_get("/test-card", _send_test_card)
     return app

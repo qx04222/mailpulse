@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     lark_base_url: str = "https://open.larksuite.com"
     lark_enabled: bool = True  # can disable Lark push globally
     lark_callback_port: int = 8080  # port for Lark card action callbacks
+    lark_encrypt_key: str = ""  # from Lark developer console → Event & Callback
+    lark_verification_token: str = ""  # from Lark developer console → Event & Callback
 
     class Config:
         env_file = ".env"
