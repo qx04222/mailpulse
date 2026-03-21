@@ -1,7 +1,7 @@
 """
 Lark card action callback handler.
 Receives button click events from interactive cards.
-Responds by updating the card content to show action result.
+Updates the card via API to show action result.
 """
 import json
 import logging
@@ -12,8 +12,35 @@ from aiohttp import web
 
 from ..storage.db import db
 from ..storage.action_items import mark_resolved
+from ..destinations.lark import update_card
 
 logger = logging.getLogger(__name__)
+
+
+def _result_card(title: str, status_text: str, color: str = "green") -> Dict:
+    """Build a simple result card to replace the original."""
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": color,
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": status_text},
+            },
+            {
+                "tag": "note",
+                "elements": [
+                    {
+                        "tag": "plain_text",
+                        "content": f"MailPulse · {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                    }
+                ],
+            },
+        ],
+    }
 
 
 async def handle_card_action(request: web.Request) -> web.Response:
@@ -23,7 +50,7 @@ async def handle_card_action(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "invalid json"}, status=400)
 
-    # URL verification challenge (required during bot setup)
+    # URL verification challenge
     if body.get("type") == "url_verification":
         return web.json_response({"challenge": body.get("challenge", "")})
 
@@ -31,39 +58,7 @@ async def handle_card_action(request: web.Request) -> web.Response:
     if body.get("type") == "interactive":
         return await _process_card_action(body)
 
-    return web.json_response({"toast": {"type": "info", "content": "OK"}})
-
-
-def _build_result_card(title: str, status_text: str, color: str = "green") -> Dict:
-    """Build a simple card that replaces the original after button click."""
-    return {
-        "type": "raw",
-        "data": {
-            "config": {"wide_screen_mode": True},
-            "header": {
-                "title": {"tag": "plain_text", "content": title},
-                "template": color,
-            },
-            "elements": [
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": status_text,
-                    },
-                },
-                {
-                    "tag": "note",
-                    "elements": [
-                        {
-                            "tag": "plain_text",
-                            "content": f"MailPulse · {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                        }
-                    ],
-                },
-            ],
-        },
-    }
+    return web.Response(status=200)
 
 
 async def _process_card_action(body: Dict[str, Any]) -> web.Response:
@@ -80,6 +75,9 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
     open_id = body.get("open_id", "")
     user_name = _get_user_name(open_id)
 
+    # Get the message_id so we can update the card
+    message_id = body.get("open_message_id", "")
+
     if action_type == "handled":
         try:
             mark_resolved(item_id, note=f"Handled by {user_name}")
@@ -90,15 +88,15 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         except Exception as e:
             logger.warning(f"[Lark Callback] DB update error (handled): {e}")
 
-        logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
-        return web.json_response({
-            "toast": {"type": "success", "content": "已标记为已处理 ✅"},
-            "card": _build_result_card(
+        # Update card via API
+        if message_id:
+            update_card(message_id, _result_card(
                 "✅ 已处理",
                 f"**{user_name}** 已标记为已处理\n时间：{datetime.now().strftime('%m-%d %H:%M')}",
                 "green",
-            ),
-        })
+            ))
+
+        logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
 
     elif action_type == "snooze":
         try:
@@ -108,15 +106,14 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         except Exception as e:
             logger.warning(f"[Lark Callback] DB update error (snooze): {e}")
 
-        logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
-        return web.json_response({
-            "toast": {"type": "info", "content": "已延后提醒 ⏰"},
-            "card": _build_result_card(
+        if message_id:
+            update_card(message_id, _result_card(
                 "⏰ 已延后",
                 f"**{user_name}** 选择稍后处理\n将在 24 小时后再次提醒",
                 "yellow",
-            ),
-        })
+            ))
+
+        logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
 
     elif action_type == "claim":
         try:
@@ -131,19 +128,17 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         except Exception as e:
             logger.warning(f"[Lark Callback] DB update error (claim): {e}")
 
-        logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
-        return web.json_response({
-            "toast": {"type": "success", "content": f"{user_name} 已认领 🙋"},
-            "card": _build_result_card(
+        if message_id:
+            update_card(message_id, _result_card(
                 "🙋 已认领",
                 f"**{user_name}** 已认领此任务",
                 "blue",
-            ),
-        })
+            ))
 
-    return web.json_response({
-        "toast": {"type": "info", "content": "操作已收到"},
-    })
+        logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
+
+    # Return empty 200 — card update is done via API
+    return web.Response(status=200)
 
 
 def _get_user_name(open_id: str) -> str:
@@ -184,6 +179,5 @@ def create_callback_app() -> web.Application:
     """Create the aiohttp app for Lark callbacks."""
     app = web.Application()
     app.router.add_post("/lark/callback", handle_card_action)
-    # Health check
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
     return app

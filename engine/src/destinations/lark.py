@@ -210,6 +210,28 @@ def send_user_card(user_id: str, card: Dict[str, Any]) -> Optional[str]:
         return None
 
 
+def update_card(message_id: str, card: Dict[str, Any]) -> bool:
+    """
+    Update an existing card message by message_id.
+    Uses PATCH /im/v1/messages/:message_id to replace card content.
+    """
+    try:
+        import json as json_mod
+        _api_call(
+            "PATCH",
+            f"/open-apis/im/v1/messages/{message_id}",
+            json_data={
+                "msg_type": "interactive",
+                "content": json_mod.dumps(card),
+            },
+        )
+        return True
+    except Exception as e:
+        print(f"[Lark] Error updating card {message_id}: {e}")
+        return False
+        return None
+
+
 def upload_file(
     file_bytes: bytes,
     filename: str,
