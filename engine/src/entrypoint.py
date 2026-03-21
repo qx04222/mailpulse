@@ -213,6 +213,22 @@ async def main():
     scheduler.start()
     logger.info("Scheduler started (DB-driven + manual trigger polling)")
 
+    # Start Lark callback server FIRST (for card button clicks)
+    callback_runner = None
+    if settings.lark_enabled and settings.lark_app_id:
+        try:
+            from aiohttp import web
+            callback_app = create_callback_app()
+            import os
+            callback_port = int(os.environ.get("PORT", getattr(settings, "lark_callback_port", 8080)))
+            callback_runner = web.AppRunner(callback_app)
+            await callback_runner.setup()
+            site = web.TCPSite(callback_runner, "0.0.0.0", callback_port)
+            await site.start()
+            logger.info(f"Lark callback server running on port {callback_port}")
+        except Exception as e:
+            logger.error(f"Lark callback server failed to start: {e}")
+
     if settings.telegram_enabled and settings.telegram_bot_token:
         # 运行 Bot
         app = create_bot_app()
@@ -232,28 +248,19 @@ async def main():
             await app.updater.stop()
             await app.stop()
             await app.shutdown()
+            if callback_runner:
+                await callback_runner.cleanup()
     else:
         logger.info("Telegram disabled or no bot token — running scheduler only")
-
-    # Start Lark callback server (for card button clicks)
-    if settings.lark_enabled and settings.lark_app_id:
-        from aiohttp import web
-        callback_app = create_callback_app()
-        import os
-        callback_port = int(os.environ.get("PORT", getattr(settings, "lark_callback_port", 8080)))
-        runner = web.AppRunner(callback_app)
-        await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", callback_port)
-        await site.start()
-        logger.info(f"Lark callback server running on port {callback_port}")
-
-    stop_event = asyncio.Event()
-    try:
-        await stop_event.wait()
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Shutting down...")
-    finally:
-        scheduler.shutdown()
+        stop_event = asyncio.Event()
+        try:
+            await stop_event.wait()
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("Shutting down...")
+        finally:
+            scheduler.shutdown()
+            if callback_runner:
+                await callback_runner.cleanup()
 
 
 if __name__ == "__main__":
