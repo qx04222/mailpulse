@@ -1,5 +1,5 @@
 """
-Lark card action callback handler — uses lark-oapi SDK.
+Lark card action callback handler — uses lark-oapi SDK (v2 schema).
 Handles button clicks (已处理/稍后处理/认领) from interactive cards.
 Returns updated card to replace the original in-place.
 """
@@ -9,6 +9,10 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 import lark_oapi as lark
+from lark_oapi.event.callback.model.p2_card_action_trigger import (
+    P2CardActionTrigger,
+    P2CardActionTriggerResponse,
+)
 from aiohttp import web
 
 from ..config import settings
@@ -19,25 +23,26 @@ logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════
-# SDK Card Action Handler
+# SDK Event Handler (v2 schema — P2CardActionTrigger)
 # ══════════════════════════════════════════════════════════════
 
-def _handle_card_action(card: lark.Card) -> dict:
+def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
     """
-    SDK CardActionHandler callback.
-    card.action.value is Dict[str, str] from button's value field.
-    card.open_id is the user who clicked.
-    Return a card dict to replace the original.
+    SDK v2 card action callback.
+    data.event.action.value → Dict[str, str]
+    data.event.operator.open_id → str
     """
-    value = card.action.value or {}
+    event = data.event
+    value = event.action.value or {}
     action_type = value.get("action", "")
     item_id = value.get("item_id", "")
-    open_id = card.open_id or ""
+    open_id = event.operator.open_id if event.operator else ""
     user_name = _get_user_name(open_id)
 
     logger.info(f"[Lark Card] action={action_type} item={item_id} user={user_name} open_id={open_id}")
 
     info = _get_action_item_info(item_id)
+    card = None
 
     if action_type == "handled":
         try:
@@ -50,7 +55,7 @@ def _handle_card_action(card: lark.Card) -> dict:
             logger.warning(f"[Lark Card] DB error (handled): {e}")
 
         logger.info(f"[Lark Card] Item {item_id} handled by {user_name}")
-        return _status_card(
+        card = _status_card(
             info["title"] or item_id,
             "✅ 已处理",
             f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
@@ -66,7 +71,7 @@ def _handle_card_action(card: lark.Card) -> dict:
             logger.warning(f"[Lark Card] DB error (snooze): {e}")
 
         logger.info(f"[Lark Card] Item {item_id} snoozed by {user_name}")
-        return _status_card(
+        card = _status_card(
             info["title"] or item_id,
             "⏰ 稍后处理",
             f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
@@ -87,35 +92,46 @@ def _handle_card_action(card: lark.Card) -> dict:
             logger.warning(f"[Lark Card] DB error (claim): {e}")
 
         logger.info(f"[Lark Card] Item {item_id} claimed by {user_name}")
-        return _status_card(
+        card = _status_card(
             info["title"] or item_id,
             "🙋 已认领",
             f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
             "blue", info,
         )
 
-    logger.warning(f"[Lark Card] Unknown action: {action_type}")
-    return {}
+    if card:
+        return P2CardActionTriggerResponse({
+            "toast": {"type": "success", "content": "操作成功"},
+            "card": {
+                "type": "raw",
+                "data": card,
+            },
+        })
+
+    return P2CardActionTriggerResponse({
+        "toast": {"type": "info", "content": "收到"},
+    })
 
 
-# Build the SDK handler
-_card_handler = lark.CardActionHandler.builder(
+# Build the SDK v2 event handler
+_event_handler = lark.EventDispatcherHandler.builder(
     settings.lark_encrypt_key,
     settings.lark_verification_token,
     lark.LogLevel.DEBUG,
-).register(_handle_card_action).build()
+).register_p2_card_action_trigger(
+    _handle_card_action
+).build()
 
 
 # ══════════════════════════════════════════════════════════════
-# aiohttp adapter (SDK handler expects RawRequest/RawResponse)
+# aiohttp adapter
 # ══════════════════════════════════════════════════════════════
 
 async def handle_lark_callback(request: web.Request) -> web.Response:
-    """aiohttp handler that delegates to the SDK CardActionHandler."""
+    """aiohttp handler that delegates to the SDK EventDispatcherHandler."""
     body = await request.read()
     headers = dict(request.headers)
 
-    # Build SDK RawRequest
     raw_req = lark.RawRequest()
     raw_req.uri = str(request.url)
     raw_req.body = body
@@ -123,10 +139,9 @@ async def handle_lark_callback(request: web.Request) -> web.Response:
 
     logger.info(f"[Lark Callback] Received: {body[:300].decode('utf-8', errors='replace')}")
 
-    # Delegate to SDK
-    raw_resp: lark.RawResponse = _card_handler.do(raw_req)
+    raw_resp: lark.RawResponse = _event_handler.do(raw_req)
 
-    logger.info(f"[Lark Callback] Response status={raw_resp.status_code} body={raw_resp.content[:200] if raw_resp.content else b''}")
+    logger.info(f"[Lark Callback] Response status={raw_resp.status_code} body={raw_resp.content[:300] if raw_resp.content else b''}")
 
     return web.Response(
         status=raw_resp.status_code,
@@ -140,7 +155,6 @@ async def handle_lark_callback(request: web.Request) -> web.Response:
 # ══════════════════════════════════════════════════════════════
 
 def _get_action_item_info(item_id: str) -> Dict:
-    """Get action item details for building status card."""
     try:
         resp = db.table("action_items") \
             .select("title, priority, companies(name), clients(name)") \
@@ -167,7 +181,6 @@ def _status_card(
     color: str,
     info: Dict,
 ) -> Dict:
-    """Build a replacement card showing what was done."""
     elements = []
     summary = f"**{original_title}**"
     if info.get("client"):
@@ -220,7 +233,6 @@ def _get_person_id(open_id: str) -> Optional[str]:
 # ══════════════════════════════════════════════════════════════
 
 async def _send_test_card(request: web.Request) -> web.Response:
-    """Send a test card with action buttons to verify callback flow."""
     from ..destinations.lark import send_user_card
 
     try:
@@ -236,13 +248,11 @@ async def _send_test_card(request: web.Request) -> web.Response:
         open_id = person["lark_user_id"]
         name = person.get("name", "Test User")
 
-        # Get first company
         company_resp = db.table("companies").select("id").eq("is_active", True).limit(1).execute()
         if not company_resp.data:
             return web.json_response({"error": "no active company"}, status=404)
         company_id = company_resp.data[0]["id"]
 
-        # Create test action_item
         test_item = db.table("action_items").insert({
             "company_id": company_id,
             "title": "测试按钮卡片",
@@ -251,7 +261,6 @@ async def _send_test_card(request: web.Request) -> web.Response:
         }).execute()
         item_id = test_item.data[0]["id"]
 
-        # Build test card — value is Dict[str, str], NOT json.dumps
         card = {
             "config": {"wide_screen_mode": True, "update_multi": True},
             "header": {
@@ -303,7 +312,6 @@ async def _send_test_card(request: web.Request) -> web.Response:
 
 
 def create_callback_app() -> web.Application:
-    """Create the aiohttp app with SDK-powered callback handler."""
     app = web.Application()
     app.router.add_post("/lark/callback", handle_lark_callback)
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
