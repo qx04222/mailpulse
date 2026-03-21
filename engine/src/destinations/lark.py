@@ -126,12 +126,12 @@ def _api_call(
 # ══════════════════════════════════════════════════════════════
 
 def send_user_message(user_id: str, text: str) -> bool:
-    """Send a text message to a Lark user (DM)."""
+    """Send a text message to a Lark user (DM). Accepts open_id."""
     try:
         import json as json_mod
         _api_call(
             "POST",
-            "/open-apis/im/v1/messages?receive_id_type=user_id",
+            "/open-apis/im/v1/messages?receive_id_type=open_id",
             json_data={
                 "receive_id": user_id,
                 "msg_type": "text",
