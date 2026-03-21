@@ -17,30 +17,56 @@ from ..destinations.lark import update_card
 logger = logging.getLogger(__name__)
 
 
-def _result_card(title: str, status_text: str, color: str = "green") -> Dict:
-    """Build a simple result card to replace the original."""
-    return {
+def _update_card_status(
+    original_card: Dict,
+    new_title: str,
+    status_line: str,
+    color: str,
+) -> Dict:
+    """
+    Keep original card content but:
+    1. Change header color + title to show status
+    2. Remove action buttons
+    3. Append status line at bottom
+    """
+    card = {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"tag": "plain_text", "content": title},
+            "title": {"tag": "plain_text", "content": new_title},
             "template": color,
         },
-        "elements": [
-            {
-                "tag": "div",
-                "text": {"tag": "lark_md", "content": status_text},
-            },
-            {
-                "tag": "note",
-                "elements": [
-                    {
-                        "tag": "plain_text",
-                        "content": f"MailPulse · {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                    }
-                ],
-            },
-        ],
+        "elements": [],
     }
+
+    # Copy original elements, skip action buttons
+    for elem in original_card.get("elements", []):
+        if elem.get("tag") == "action":
+            continue  # remove buttons
+        card["elements"].append(elem)
+
+    # Append status line
+    card["elements"].append({"tag": "hr"})
+    card["elements"].append({
+        "tag": "div",
+        "text": {"tag": "lark_md", "content": status_line},
+    })
+
+    return card
+
+
+def _get_original_card(message_id: str) -> Optional[Dict]:
+    """Fetch the original card content from Lark API."""
+    try:
+        from ..destinations.lark import _api_call
+        data = _api_call("GET", f"/open-apis/im/v1/messages/{message_id}")
+        items = data.get("data", {}).get("items", [])
+        if items:
+            body = items[0].get("body", {})
+            content = body.get("content", "{}")
+            return json.loads(content) if isinstance(content, str) else content
+    except Exception as e:
+        logger.warning(f"[Lark Callback] Failed to fetch original card: {e}")
+    return None
 
 
 async def handle_card_action(request: web.Request) -> web.Response:
@@ -88,13 +114,17 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         except Exception as e:
             logger.warning(f"[Lark Callback] DB update error (handled): {e}")
 
-        # Update card via API
+        # Update card: keep content, remove buttons, add status
         if message_id:
-            update_card(message_id, _result_card(
-                "✅ 已处理",
-                f"**{user_name}** 已标记为已处理\n时间：{datetime.now().strftime('%m-%d %H:%M')}",
-                "green",
-            ))
+            original = _get_original_card(message_id)
+            if original:
+                updated = _update_card_status(
+                    original,
+                    f"✅ 已处理 | {original.get('header', {}).get('title', {}).get('content', '')[:40]}",
+                    f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
+                    "green",
+                )
+                update_card(message_id, updated)
 
         logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
 
@@ -107,11 +137,15 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
             logger.warning(f"[Lark Callback] DB update error (snooze): {e}")
 
         if message_id:
-            update_card(message_id, _result_card(
-                "⏰ 已延后",
-                f"**{user_name}** 选择稍后处理\n将在 24 小时后再次提醒",
-                "yellow",
-            ))
+            original = _get_original_card(message_id)
+            if original:
+                updated = _update_card_status(
+                    original,
+                    f"⏰ 稍后 | {original.get('header', {}).get('title', {}).get('content', '')[:40]}",
+                    f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
+                    "yellow",
+                )
+                update_card(message_id, updated)
 
         logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
 
@@ -129,11 +163,15 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
             logger.warning(f"[Lark Callback] DB update error (claim): {e}")
 
         if message_id:
-            update_card(message_id, _result_card(
-                "🙋 已认领",
-                f"**{user_name}** 已认领此任务",
-                "blue",
-            ))
+            original = _get_original_card(message_id)
+            if original:
+                updated = _update_card_status(
+                    original,
+                    f"🙋 已认领 | {original.get('header', {}).get('title', {}).get('content', '')[:40]}",
+                    f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
+                    "blue",
+                )
+                update_card(message_id, updated)
 
         logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
 
