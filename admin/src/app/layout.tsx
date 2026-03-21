@@ -1,21 +1,18 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import LocaleProvider from "@/lib/i18n/provider";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
-  title: "Email Digest Admin",
-  description: "Admin panel for the email digest system",
+  title: "MailPulse Admin",
+  description: "MailPulse management suite",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1",
 };
 
 export default function RootLayout({
@@ -24,11 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="zh"
-      className={`${geistSans.variable} ${geistMono.variable} h-full`}
-    >
-      <body className="h-full">
+    <html lang="zh" className={`${inter.variable} h-full`}>
+      <body className="h-full font-sans">
         <LocaleProvider>{children}</LocaleProvider>
       </body>
     </html>

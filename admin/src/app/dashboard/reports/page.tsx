@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Download } from "lucide-react";
-import { useLocale } from "@/lib/i18n";
 import type { DigestRun } from "@/lib/types";
 
 type DigestRunWithCompany = DigestRun & {
@@ -10,7 +9,6 @@ type DigestRunWithCompany = DigestRun & {
 };
 
 export default function ReportsPage() {
-  const { t } = useLocale();
   const [reports, setReports] = useState<DigestRunWithCompany[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -29,40 +27,40 @@ export default function ReportsPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-slate-900 mb-6">
-        {t("reports.title")}
+        Digest Runs & Reports
       </h1>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">{t("common.loading")}</div>
+        <div className="text-center py-12 text-slate-400">Loading...</div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">{t("reports.date")}</th>
+                <th className="px-5 py-3 font-medium text-slate-500">Date</th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("reports.company")}
+                  Company
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("reports.totalEmails")}
+                  Total Emails
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("reports.newEmails")}
+                  New
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("reports.highPriority")}
+                  High Priority
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("reports.actionItems")}
+                  Action Items
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("reports.status")}
+                  Status
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("reports.telegram")}
+                  Telegram
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("reports.download")}
+                  Reports
                 </th>
               </tr>
             </thead>
@@ -73,7 +71,7 @@ export default function ReportsPage() {
                     colSpan={9}
                     className="px-5 py-8 text-center text-slate-400"
                   >
-                    {t("reports.noData")}
+                    No digest runs found
                   </td>
                 </tr>
               ) : (
@@ -110,24 +108,7 @@ export default function ReportsPage() {
                       <StatusBadge status={run.status} />
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      <div className="flex items-center gap-1.5">
-                        {run.lark_delivered ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-600">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                            {t("common.yes")}
-                          </span>
-                        ) : run.telegram_delivered ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-600">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                            {t("common.yes")}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">{t("common.no")}</span>
-                        )}
-                        {run.telegram_delivered && !run.lark_delivered && (
-                          <span className="text-xs text-slate-400">(TG)</span>
-                        )}
-                      </div>
+                      {run.telegram_delivered ? "Yes" : "No"}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1">

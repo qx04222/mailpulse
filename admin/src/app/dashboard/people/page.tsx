@@ -1,412 +1,464 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, X } from "lucide-react";
-import { useLocale } from "@/lib/i18n";
-import type { Person, Company } from "@/lib/types";
+import { Download, Search, RefreshCw } from "lucide-react";
 
-type PersonWithCompanies = Person & { companies: Company[] };
+interface Person {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  avatar_url: string | null;
+  person_type: string;
+  telegram_user_id: string | null;
+  lark_user_id: string | null;
+  lark_departments: string[];
+  lark_job_title: string | null;
+  lark_mobile: string | null;
+  lark_employee_no: string | null;
+  lark_synced_at: string | null;
+  companies: { id: string; name: string }[];
+}
+
+function StatusDot({ active }: { active: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        className={`w-1.5 h-1.5 rounded-full ${
+          active ? "bg-emerald-500" : "bg-slate-300"
+        }`}
+      />
+      <span
+        className={`text-xs font-medium ${
+          active ? "text-emerald-700" : "text-slate-400"
+        }`}
+      >
+        {active ? "Active" : "Inactive"}
+      </span>
+    </div>
+  );
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const styles: Record<string, string> = {
+    owner: "bg-violet-100/80 text-violet-700",
+    manager: "bg-blue-100/80 text-blue-700",
+    member: "bg-slate-100 text-slate-500",
+  };
+  return (
+    <span
+      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide uppercase ${
+        styles[role] ?? "bg-slate-100 text-slate-500"
+      }`}
+    >
+      {role}
+    </span>
+  );
+}
+
+function TypeBadge({ type }: { type: string }) {
+  const styles: Record<string, string> = {
+    employee: "bg-blue-50 text-blue-700",
+    shared_mailbox: "bg-amber-50 text-amber-700",
+  };
+  const labels: Record<string, string> = {
+    employee: "Employee",
+    shared_mailbox: "Shared",
+  };
+  return (
+    <span
+      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide uppercase ${
+        styles[type] ?? "bg-slate-100 text-slate-500"
+      }`}
+    >
+      {labels[type] ?? type}
+    </span>
+  );
+}
 
 export default function PeoplePage() {
-  const { t } = useLocale();
-  const [people, setPeople] = useState<PersonWithCompanies[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<PersonWithCompanies | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState("all");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [peopleRes, companiesRes] = await Promise.all([
-      fetch("/api/people"),
-      fetch("/api/companies"),
-    ]);
-    const peopleData = await peopleRes.json();
-    const companiesData = await companiesRes.json();
-    setPeople(Array.isArray(peopleData) ? peopleData : []);
-    setCompanies(Array.isArray(companiesData) ? companiesData : []);
-    setLoading(false);
+    setError("");
+    try {
+      const res = await fetch("/api/people");
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to fetch");
+      const data = await res.json();
+      setPeople(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  async function handleDelete(id: string) {
-    if (!confirm(t("people.confirmDelete"))) return;
-    await fetch(`/api/people?id=${id}`, { method: "DELETE" });
-    fetchData();
+  async function handleSync() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/people/sync", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sync failed");
+      setSyncResult(
+        `Synced: ${data.updated} updated, ${data.created} created`
+      );
+      fetchData();
+    } catch (err) {
+      setSyncResult(
+        `Sync failed: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+    } finally {
+      setSyncing(false);
+    }
   }
 
-  function openEdit(person: PersonWithCompanies) {
-    setEditing(person);
-    setShowForm(true);
-  }
+  const filtered = people.filter((p) => {
+    if (filterType === "employee" && p.person_type !== "employee") return false;
+    if (filterType === "shared_mailbox" && p.person_type !== "shared_mailbox")
+      return false;
+    if (filterType === "lark" && !p.lark_user_id) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      p.email?.toLowerCase().includes(q) ||
+      p.lark_job_title?.toLowerCase().includes(q) ||
+      p.lark_departments?.some((d) => d.toLowerCase().includes(q)) ||
+      p.companies?.some((c) => c.name.toLowerCase().includes(q))
+    );
+  });
 
-  function openAdd() {
-    setEditing(null);
-    setShowForm(true);
-  }
-
-  function closeForm() {
-    setShowForm(false);
-    setEditing(null);
-  }
+  const larkCount = people.filter((p) => p.lark_user_id).length;
+  const activeCount = people.filter((p) => p.is_active).length;
+  const lastSync = people
+    .map((p) => p.lark_synced_at)
+    .filter(Boolean)
+    .sort()
+    .pop();
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">{t("people.title")}</h1>
+      {/* Hero Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 md:mb-12 gap-4">
+        <div>
+          <h1 className="text-3xl md:text-[2.75rem] font-bold tracking-tight text-on-surface leading-tight">
+            Directory
+          </h1>
+          <p className="text-muted mt-2 max-w-xl text-sm md:text-base">
+            Manage your organization&apos;s members, roles, and Lark
+            integration from a centralized viewpoint.
+          </p>
+        </div>
         <button
-          onClick={openAdd}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          onClick={handleSync}
+          disabled={syncing}
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary font-medium rounded-xl shadow-lg shadow-primary/20 hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-60 disabled:pointer-events-none text-sm whitespace-nowrap"
         >
-          <Plus className="h-4 w-4" />
-          {t("people.addPerson")}
+          <Download
+            className={`h-4 w-4 ${syncing ? "animate-bounce" : ""}`}
+          />
+          <span>{syncing ? "Syncing..." : "Sync from Lark"}</span>
         </button>
       </div>
 
+      {/* Sync result toast */}
+      {syncResult && (
+        <div
+          className={`rounded-xl px-4 py-3 text-sm mb-6 ${
+            syncResult.includes("failed")
+              ? "bg-red-50 text-red-700"
+              : "bg-emerald-50 text-emerald-700"
+          }`}
+        >
+          {syncResult}
+        </div>
+      )}
+
+      {/* Stats Bento */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 mb-8">
+        <div className="p-5 bg-surface-low rounded-2xl">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-muted/60 mb-1.5">
+            Total Members
+          </p>
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-2xl font-bold text-on-surface">
+              {people.length}
+            </h3>
+            <span className="text-xs text-muted font-medium">
+              {activeCount} active
+            </span>
+          </div>
+        </div>
+        <div className="p-5 bg-surface-low rounded-2xl">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-muted/60 mb-1.5">
+            Lark Connected
+          </p>
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-2xl font-bold text-on-surface">{larkCount}</h3>
+            <span className="text-xs text-muted font-medium">
+              of {people.length}
+            </span>
+          </div>
+          <div className="mt-3 h-1.5 w-full bg-surface-high rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary-container rounded-full transition-all"
+              style={{
+                width: `${people.length > 0 ? (larkCount / people.length) * 100 : 0}%`,
+              }}
+            />
+          </div>
+        </div>
+        <div className="p-5 bg-primary text-on-primary rounded-2xl relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent" />
+          <p className="text-[11px] font-bold uppercase tracking-widest text-white/70 mb-1.5 relative z-10">
+            Sync Status
+          </p>
+          <div className="flex items-center gap-2 relative z-10">
+            <h3 className="text-2xl font-bold">
+              {lastSync ? "Healthy" : "Not synced"}
+            </h3>
+            {lastSync && <RefreshCw className="h-4 w-4 text-white/50" />}
+          </div>
+          <p className="text-xs text-white/60 mt-3 relative z-10">
+            {lastSync
+              ? `Last sync: ${new Date(lastSync).toLocaleString("zh-CN")}`
+              : "Click 'Sync from Lark' to start"}
+          </p>
+        </div>
+      </div>
+
+      {/* Search & Filter */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search members, roles or departments..."
+            className="w-full bg-surface-low border-none rounded-xl py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary-container/20 transition-all outline-none placeholder:text-slate-400"
+          />
+        </div>
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="rounded-xl bg-surface-low border-none px-4 py-2.5 text-sm text-muted focus:ring-2 focus:ring-primary-container/20 outline-none"
+        >
+          <option value="all">All types</option>
+          <option value="employee">Employees</option>
+          <option value="shared_mailbox">Shared Mailbox</option>
+          <option value="lark">Lark Connected</option>
+        </select>
+      </div>
+
+      {error && (
+        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 mb-6">
+          {error}
+        </div>
+      )}
+
+      {/* Table */}
       {loading ? (
-        <div className="text-center py-12 text-slate-400">{t("common.loading")}</div>
+        <div className="text-center py-16 text-muted">Loading...</div>
       ) : (
-        <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">{t("people.name")}</th>
-                <th className="px-5 py-3 font-medium text-slate-500">{t("people.email")}</th>
-                <th className="px-5 py-3 font-medium text-slate-500">{t("people.role")}</th>
-                <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("people.telegram")}
-                </th>
-                <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("people.active")}
-                </th>
-                <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("people.companies")}
-                </th>
-                <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("common.actions")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {people.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-5 py-8 text-center text-slate-400"
-                  >
-                    {t("people.noData")}
-                  </td>
+        <div className="bg-surface-card rounded-2xl overflow-hidden shadow-[0px_20px_40px_rgba(25,28,30,0.04)]">
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface-low">
+                  <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
+                    Name
+                  </th>
+                  <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
+                    Email
+                  </th>
+                  <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
+                    Type
+                  </th>
+                  <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
+                    Role
+                  </th>
+                  <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
+                    Department
+                  </th>
+                  <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
+                    Status
+                  </th>
+                  <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
+                    Lark
+                  </th>
                 </tr>
-              ) : (
-                people.map((person) => (
-                  <tr
-                    key={person.id}
-                    className="border-b border-slate-50 hover:bg-slate-50"
-                  >
-                    <td className="px-5 py-3 font-medium text-slate-900">
-                      {person.name}
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">{person.email}</td>
-                    <td className="px-5 py-3">
-                      <RoleBadge role={person.role} t={t} />
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">
-                      <div>
-                        {person.lark_user_id ?? "—"}
-                        {person.telegram_user_id && (
-                          <div className="text-xs text-slate-400 mt-0.5">
-                            TG: {person.telegram_user_id}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                          person.is_active
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {person.is_active ? t("common.active") : t("common.inactive")}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">
-                      {person.companies?.map((c) => c.name).join(", ") || "—"}
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => openEdit(person)}
-                          className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(person.id)}
-                          className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-8 py-16 text-center text-muted"
+                    >
+                      {search ? "No matching results" : "No members found"}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showForm && (
-        <PersonForm
-          person={editing}
-          companies={companies}
-          t={t}
-          onClose={closeForm}
-          onSave={() => {
-            closeForm();
-            fetchData();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function RoleBadge({ role, t }: { role: string; t: (key: string) => string }) {
-  const styles: Record<string, string> = {
-    owner: "bg-violet-50 text-violet-700",
-    manager: "bg-blue-50 text-blue-700",
-    member: "bg-slate-100 text-slate-600",
-  };
-  return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[role] ?? "bg-slate-100 text-slate-600"}`}
-    >
-      {t(`people.roles.${role}`)}
-    </span>
-  );
-}
-
-function PersonForm({
-  person,
-  companies,
-  t,
-  onClose,
-  onSave,
-}: {
-  person: PersonWithCompanies | null;
-  companies: Company[];
-  t: (key: string) => string;
-  onClose: () => void;
-  onSave: () => void;
-}) {
-  const [name, setName] = useState(person?.name ?? "");
-  const [email, setEmail] = useState(person?.email ?? "");
-  const [role, setRole] = useState(person?.role ?? "member");
-  const [larkUserId, setLarkUserId] = useState(
-    person?.lark_user_id ?? ""
-  );
-  const [telegramUserId, setTelegramUserId] = useState(
-    person?.telegram_user_id ?? ""
-  );
-  const [isActive, setIsActive] = useState(person?.is_active ?? true);
-  const [selectedCompanies, setSelectedCompanies] = useState<string[]>(
-    person?.companies?.map((c) => c.id) ?? []
-  );
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError("");
-
-    const payload = {
-      id: person?.id,
-      name,
-      email,
-      role,
-      lark_user_id: larkUserId || null,
-      telegram_user_id: telegramUserId || null,
-      is_active: isActive,
-      company_ids: selectedCompanies,
-    };
-
-    const res = await fetch("/api/people", {
-      method: person ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error || "Failed to save");
-      setSaving(false);
-      return;
-    }
-
-    onSave();
-  }
-
-  function toggleCompany(id: string) {
-    setSelectedCompanies((prev) =>
-      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            {person ? t("people.editPerson") : t("people.addPerson")}
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-slate-400 hover:text-slate-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              {t("people.name")}
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              required
-            />
+                ) : (
+                  filtered.map((person) => (
+                    <tr
+                      key={person.id}
+                      className="group hover:bg-surface-low transition-colors duration-200"
+                    >
+                      <td className="px-6 lg:px-8 py-4">
+                        <div className="flex items-center gap-3">
+                          {person.avatar_url ? (
+                            <img
+                              src={person.avatar_url}
+                              alt={person.name}
+                              className="w-9 h-9 rounded-full bg-slate-100 border-2 border-white shadow-sm object-cover"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-primary-container/10 border-2 border-white shadow-sm flex items-center justify-center text-xs font-bold text-primary-container">
+                              {person.name.charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-sm font-semibold text-on-surface">
+                              {person.name}
+                            </p>
+                            {person.lark_job_title && (
+                              <p className="text-[11px] text-muted/60">
+                                {person.lark_job_title}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 lg:px-8 py-4">
+                        <span className="text-sm text-muted font-medium">
+                          {person.email || "\u2014"}
+                        </span>
+                      </td>
+                      <td className="px-6 lg:px-8 py-4">
+                        <TypeBadge type={person.person_type} />
+                      </td>
+                      <td className="px-6 lg:px-8 py-4">
+                        <RoleBadge role={person.role} />
+                      </td>
+                      <td className="px-6 lg:px-8 py-4">
+                        {person.lark_departments?.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {person.lark_departments.map((dept, i) => (
+                              <span
+                                key={i}
+                                className="px-2 py-0.5 rounded-full bg-blue-50 text-[11px] font-medium text-blue-700"
+                              >
+                                {dept}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted/40">{"\u2014"}</span>
+                        )}
+                      </td>
+                      <td className="px-6 lg:px-8 py-4">
+                        <StatusDot active={person.is_active} />
+                      </td>
+                      <td className="px-6 lg:px-8 py-4">
+                        {person.lark_user_id ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[11px] font-bold text-emerald-700">
+                            Connected
+                          </span>
+                        ) : (
+                          <span className="text-muted/40 text-xs">
+                            {"\u2014"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              {t("people.email")}
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              required
-            />
+          {/* Mobile cards */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {filtered.length === 0 ? (
+              <div className="px-4 py-12 text-center text-muted text-sm">
+                {search ? "No matching results" : "No members found"}
+              </div>
+            ) : (
+              filtered.map((person) => (
+                <div key={person.id} className="px-4 py-4 space-y-2.5">
+                  <div className="flex items-center gap-3">
+                    {person.avatar_url ? (
+                      <img
+                        src={person.avatar_url}
+                        alt={person.name}
+                        className="w-10 h-10 rounded-full bg-slate-100 border-2 border-white shadow-sm object-cover"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-primary-container/10 border-2 border-white shadow-sm flex items-center justify-center text-sm font-bold text-primary-container">
+                        {person.name.charAt(0)}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-on-surface truncate">
+                          {person.name}
+                        </p>
+                        <StatusDot active={person.is_active} />
+                      </div>
+                      <p className="text-xs text-muted truncate">
+                        {person.email || "\u2014"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 pl-[52px]">
+                    <TypeBadge type={person.person_type} />
+                    <RoleBadge role={person.role} />
+                    {person.lark_user_id && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[11px] font-bold text-emerald-700">
+                        Lark
+                      </span>
+                    )}
+                  </div>
+                  {person.lark_departments?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pl-[52px]">
+                      {person.lark_departments.map((dept, i) => (
+                        <span
+                          key={i}
+                          className="px-2 py-0.5 rounded-full bg-blue-50 text-[11px] font-medium text-blue-700"
+                        >
+                          {dept}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              {t("people.role")}
-            </label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as Person["role"])}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="owner">{t("people.roles.owner")}</option>
-              <option value="manager">{t("people.roles.manager")}</option>
-              <option value="member">{t("people.roles.member")}</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              {t("people.telegram")}
-            </label>
-            <input
-              type="text"
-              value={larkUserId}
-              onChange={(e) => setLarkUserId(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              placeholder="Optional"
-            />
-            <p className="mt-1 text-xs text-slate-400">
-              {t("people.telegramHelper")}
+          {/* Footer */}
+          <div className="px-4 md:px-8 py-4 bg-surface-card flex items-center justify-between border-t border-slate-100">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted/60">
+              Showing {filtered.length} of {people.length} members
             </p>
           </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">
-              {t("people.telegramLegacy")}
-            </label>
-            <input
-              type="text"
-              value={telegramUserId}
-              onChange={(e) => setTelegramUserId(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              placeholder="Optional"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="is_active"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-            />
-            <label htmlFor="is_active" className="text-sm text-slate-700">
-              {t("people.active")}
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              {t("people.companies")}
-            </label>
-            <div className="space-y-1.5 max-h-32 overflow-y-auto">
-              {companies.map((company) => (
-                <label
-                  key={company.id}
-                  className="flex items-center gap-2 text-sm text-slate-600"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedCompanies.includes(company.id)}
-                    onChange={() => toggleCompany(company.id)}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  {company.name}
-                </label>
-              ))}
-              {companies.length === 0 && (
-                <p className="text-sm text-slate-400">{t("people.noCompanies")}</p>
-              )}
-            </div>
-          </div>
-
-          {error && (
-            <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? t("common.saving") : t("common.save")}
-            </button>
-          </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

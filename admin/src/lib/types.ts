@@ -3,7 +3,6 @@ export interface Person {
   name: string;
   email: string;
   telegram_user_id: string | null;
-  lark_user_id: string | null;
   role: "owner" | "manager" | "member";
   is_active: boolean;
   avatar_url: string | null;
@@ -17,10 +16,6 @@ export interface Company {
   name: string;
   gmail_label: string;
   telegram_group_id: string | null;
-  lark_group_id: string | null;
-  lark_base_app_token: string | null;
-  lark_base_table_id: string | null;
-  lark_calendar_id: string | null;
   logo_url: string | null;
   is_active: boolean;
   created_at: string;
@@ -74,26 +69,6 @@ export interface ActionItem {
   client?: Client;
 }
 
-export interface DigestSchedule {
-  id: string;
-  name: string;
-  cron_expression: string;
-  timezone: string;
-  company_id: string | null;
-  target_type: "group" | "person" | "all_members";
-  target_group_id: string | null;
-  target_person_id: string | null;
-  report_type: "brief" | "full_docx" | "full_pdf" | "brief_with_docx" | "sync_only";
-  include_sections: string[];
-  lookback_days: number;
-  is_active: boolean;
-  last_run_at: string | null;
-  last_run_status: string | null;
-  created_at: string;
-  company?: Company;
-  target_person?: Person;
-}
-
 export interface DigestRun {
   id: string;
   company_id: string;
@@ -103,7 +78,6 @@ export interface DigestRun {
   high_priority: number;
   action_items_created: number;
   telegram_delivered: boolean;
-  lark_delivered: boolean;
   report_docx_url: string | null;
   report_pdf_url: string | null;
   status: "running" | "completed" | "failed";

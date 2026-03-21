@@ -1,7 +1,4 @@
-"use client";
-
-import { useEffect, useState, useCallback } from "react";
-import { useLocale } from "@/lib/i18n";
+import { createAdminClient } from "@/lib/supabase";
 import {
   Building2,
   Users,
@@ -9,60 +6,58 @@ import {
   CheckSquare,
 } from "lucide-react";
 
-interface DashboardData {
-  totalCompanies: number;
-  totalPeople: number;
-  totalEmails: number;
-  totalActionItems: number;
-  recentRuns: Record<string, unknown>[];
+async function getDashboardData() {
+  const supabase = createAdminClient();
+
+  const [companies, people, threads, actionItems, digestRuns] =
+    await Promise.all([
+      supabase.from("companies").select("id", { count: "exact", head: true }),
+      supabase.from("people").select("id", { count: "exact", head: true }),
+      supabase.from("threads").select("id", { count: "exact", head: true }),
+      supabase.from("action_items").select("id", { count: "exact", head: true }),
+      supabase
+        .from("digest_runs")
+        .select("*, companies(name)")
+        .order("started_at", { ascending: false })
+        .limit(10),
+    ]);
+
+  return {
+    totalCompanies: companies.count ?? 0,
+    totalPeople: people.count ?? 0,
+    totalEmails: threads.count ?? 0,
+    totalActionItems: actionItems.count ?? 0,
+    recentRuns: (digestRuns.data ?? []).map((r: Record<string, unknown>) => ({
+      ...r,
+      company: r.companies,
+    })),
+  };
 }
 
-export default function DashboardPage() {
-  const { t } = useLocale();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/dashboard");
-    const json = await res.json();
-    setData(json);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  if (loading || !data) {
-    return (
-      <div className="text-center py-12 text-slate-400">
-        {t("common.loading")}
-      </div>
-    );
-  }
+export default async function DashboardPage() {
+  const data = await getDashboardData();
 
   const stats = [
     {
-      label: t("dashboard.totalCompanies"),
+      label: "Companies",
       value: data.totalCompanies,
       icon: Building2,
       color: "bg-blue-500",
     },
     {
-      label: t("dashboard.totalPeople"),
+      label: "People",
       value: data.totalPeople,
       icon: Users,
       color: "bg-emerald-500",
     },
     {
-      label: t("dashboard.totalThreads"),
+      label: "Email Threads",
       value: data.totalEmails,
       icon: Mail,
       color: "bg-violet-500",
     },
     {
-      label: t("dashboard.totalActions"),
+      label: "Action Items",
       value: data.totalActionItems,
       icon: CheckSquare,
       color: "bg-amber-500",
@@ -71,7 +66,7 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-6">{t("nav.dashboard")}</h1>
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">Dashboard</h1>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
@@ -101,25 +96,25 @@ export default function DashboardPage() {
       <div className="rounded-xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            {t("dashboard.recentRuns")}
+            Recent Digest Runs
           </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">{t("dashboard.date")}</th>
+                <th className="px-5 py-3 font-medium text-slate-500">Date</th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("dashboard.company")}
+                  Company
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("dashboard.emails")}
+                  Emails
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("common.status")}
+                  Status
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("dashboard.telegram")}
+                  Telegram
                 </th>
               </tr>
             </thead>
@@ -130,7 +125,7 @@ export default function DashboardPage() {
                     colSpan={5}
                     className="px-5 py-8 text-center text-slate-400"
                   >
-                    {t("dashboard.noRuns")}
+                    No digest runs yet
                   </td>
                 </tr>
               ) : (
@@ -153,24 +148,7 @@ export default function DashboardPage() {
                         <StatusBadge status={run.status as string} />
                       </td>
                       <td className="px-5 py-3 text-slate-700">
-                        <div className="flex items-center gap-1.5">
-                          {(run.lark_delivered as boolean) ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-600">
-                              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                              {t("dashboard.delivered")}
-                            </span>
-                          ) : (run.telegram_delivered as boolean) ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-600">
-                              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                              {t("dashboard.delivered")}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                          {(run.telegram_delivered as boolean) && !(run.lark_delivered as boolean) && (
-                            <span className="text-xs text-slate-400">(TG)</span>
-                          )}
-                        </div>
+                        {run.telegram_delivered ? "Delivered" : "—"}
                       </td>
                     </tr>
                   )

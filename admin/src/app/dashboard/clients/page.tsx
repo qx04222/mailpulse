@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useLocale } from "@/lib/i18n";
 import type { Client, Company } from "@/lib/types";
 
 export default function ClientsPage() {
-  const { t } = useLocale();
   const [clients, setClients] = useState<Client[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,13 +36,13 @@ export default function ClientsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">{t("clients.title")}</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Clients</h1>
         <select
           value={filterCompany}
           onChange={(e) => setFilterCompany(e.target.value)}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
-          <option value="">{t("clients.allCompanies")}</option>
+          <option value="">All Companies</option>
           {companies.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -54,22 +52,22 @@ export default function ClientsPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">{t("common.loading")}</div>
+        <div className="text-center py-12 text-slate-400">Loading...</div>
       ) : (
         <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-5 py-3 font-medium text-slate-500">{t("clients.name")}</th>
-                <th className="px-5 py-3 font-medium text-slate-500">{t("clients.email")}</th>
+                <th className="px-5 py-3 font-medium text-slate-500">Name</th>
+                <th className="px-5 py-3 font-medium text-slate-500">Email</th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("clients.org")}
+                  Organization
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("clients.status")}
+                  Status
                 </th>
                 <th className="px-5 py-3 font-medium text-slate-500">
-                  {t("clients.lastActivity")}
+                  Last Activity
                 </th>
               </tr>
             </thead>
@@ -80,7 +78,7 @@ export default function ClientsPage() {
                     colSpan={5}
                     className="px-5 py-8 text-center text-slate-400"
                   >
-                    {t("clients.noData")}
+                    No clients found
                   </td>
                 </tr>
               ) : (
@@ -118,7 +116,6 @@ export default function ClientsPage() {
       {selectedClient && (
         <ClientDetail
           client={selectedClient}
-          t={t}
           onClose={() => setSelectedClient(null)}
         />
       )}
@@ -146,11 +143,9 @@ function ClientStatusBadge({ status }: { status: string }) {
 
 function ClientDetail({
   client,
-  t,
   onClose,
 }: {
   client: Client;
-  t: (key: string) => string;
   onClose: () => void;
 }) {
   return (
@@ -158,7 +153,7 @@ function ClientDetail({
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">
-            {t("clients.details")}
+            Client Details
           </h2>
           <button
             onClick={onClose}
@@ -169,14 +164,14 @@ function ClientDetail({
         </div>
 
         <div className="space-y-3">
-          <Field label={t("clients.name")} value={client.name} />
-          <Field label={t("clients.email")} value={client.email} />
-          <Field label={t("clients.org")} value={client.organization} />
-          <Field label={t("clients.phone")} value={client.phone} />
-          <Field label={t("clients.status")} value={client.status} />
-          <Field label={t("clients.notes")} value={client.notes} />
+          <Field label="Name" value={client.name} />
+          <Field label="Email" value={client.email} />
+          <Field label="Organization" value={client.organization} />
+          <Field label="Phone" value={client.phone} />
+          <Field label="Status" value={client.status} />
+          <Field label="Notes" value={client.notes} />
           <Field
-            label={t("clients.firstSeen")}
+            label="First Seen"
             value={
               client.first_seen_at
                 ? new Date(client.first_seen_at).toLocaleString()
@@ -184,7 +179,7 @@ function ClientDetail({
             }
           />
           <Field
-            label={t("clients.lastActivity")}
+            label="Last Activity"
             value={
               client.last_activity_at
                 ? new Date(client.last_activity_at).toLocaleString()
@@ -198,7 +193,7 @@ function ClientDetail({
             onClick={onClose}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            {t("common.close")}
+            Close
           </button>
         </div>
       </div>
