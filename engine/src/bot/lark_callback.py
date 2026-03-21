@@ -228,9 +228,16 @@ async def _send_test_card(request: web.Request) -> web.Response:
         open_id = person["lark_user_id"]
         name = person.get("name", "Test User")
 
+        # Get first company for test data
+        company_resp = db.table("companies").select("id").eq("is_active", True).limit(1).execute()
+        if not company_resp.data:
+            return web.json_response({"error": "no active company"}, status=404)
+        company_id = company_resp.data[0]["id"]
+
         # Create a test action_item
         from datetime import datetime, timezone
         test_item = db.table("action_items").insert({
+            "company_id": company_id,
             "title": "测试按钮卡片",
             "priority": "high",
             "status": "pending",
