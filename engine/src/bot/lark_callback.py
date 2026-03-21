@@ -1,6 +1,7 @@
 """
 Lark card action callback handler.
 Receives button click events from interactive cards.
+Responds by updating the card content to show action result.
 """
 import json
 import logging
@@ -30,7 +31,39 @@ async def handle_card_action(request: web.Request) -> web.Response:
     if body.get("type") == "interactive":
         return await _process_card_action(body)
 
-    return web.json_response({"ok": True})
+    return web.json_response({"toast": {"type": "info", "content": "OK"}})
+
+
+def _build_result_card(title: str, status_text: str, color: str = "green") -> Dict:
+    """Build a simple card that replaces the original after button click."""
+    return {
+        "type": "raw",
+        "data": {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": title},
+                "template": color,
+            },
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": status_text,
+                    },
+                },
+                {
+                    "tag": "note",
+                    "elements": [
+                        {
+                            "tag": "plain_text",
+                            "content": f"MailPulse · {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                        }
+                    ],
+                },
+            ],
+        },
+    }
 
 
 async def _process_card_action(body: Dict[str, Any]) -> web.Response:
@@ -60,6 +93,11 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
         return web.json_response({
             "toast": {"type": "success", "content": "已标记为已处理 ✅"},
+            "card": _build_result_card(
+                "✅ 已处理",
+                f"**{user_name}** 已标记为已处理\n时间：{datetime.now().strftime('%m-%d %H:%M')}",
+                "green",
+            ),
         })
 
     elif action_type == "snooze":
@@ -73,6 +111,11 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
         return web.json_response({
             "toast": {"type": "info", "content": "已延后提醒 ⏰"},
+            "card": _build_result_card(
+                "⏰ 已延后",
+                f"**{user_name}** 选择稍后处理\n将在 24 小时后再次提醒",
+                "yellow",
+            ),
         })
 
     elif action_type == "claim":
@@ -91,6 +134,11 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
         return web.json_response({
             "toast": {"type": "success", "content": f"{user_name} 已认领 🙋"},
+            "card": _build_result_card(
+                "🙋 已认领",
+                f"**{user_name}** 已认领此任务",
+                "blue",
+            ),
         })
 
     return web.json_response({
