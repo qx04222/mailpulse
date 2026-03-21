@@ -105,7 +105,14 @@ export default function CompaniesPage() {
                       </code>
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {company.telegram_group_id ?? "—"}
+                      <div>
+                        {company.lark_group_id ?? "—"}
+                        {company.telegram_group_id && (
+                          <div className="text-xs text-slate-400 mt-0.5">
+                            TG: {company.telegram_group_id}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       <span
@@ -200,6 +207,9 @@ function CompanyForm({
 }) {
   const [name, setName] = useState(company?.name ?? "");
   const [gmailLabel, setGmailLabel] = useState(company?.gmail_label ?? "");
+  const [larkGroupId, setLarkGroupId] = useState(
+    company?.lark_group_id ?? ""
+  );
   const [telegramGroupId, setTelegramGroupId] = useState(
     company?.telegram_group_id ?? ""
   );
@@ -216,6 +226,7 @@ function CompanyForm({
       id: company?.id,
       name,
       gmail_label: gmailLabel,
+      lark_group_id: larkGroupId || null,
       telegram_group_id: telegramGroupId || null,
       is_active: isActive,
     };
@@ -284,14 +295,27 @@ function CompanyForm({
             </label>
             <input
               type="text"
-              value={telegramGroupId}
-              onChange={(e) => setTelegramGroupId(e.target.value)}
+              value={larkGroupId}
+              onChange={(e) => setLarkGroupId(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              placeholder="Optional"
+              placeholder="oc_xxxxxxxxxxxx"
             />
             <p className="mt-1 text-xs text-slate-400">
               {t("companies.telegramGroupHelper")}
             </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Telegram Group ID (legacy)
+            </label>
+            <input
+              type="text"
+              value={telegramGroupId}
+              onChange={(e) => setTelegramGroupId(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="Optional"
+            />
           </div>
 
           <div className="flex items-center gap-2">

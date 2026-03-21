@@ -125,6 +125,25 @@ def _api_call(
 # Message sending
 # ══════════════════════════════════════════════════════════════
 
+def send_user_message(user_id: str, text: str) -> bool:
+    """Send a text message to a Lark user (DM)."""
+    try:
+        import json as json_mod
+        _api_call(
+            "POST",
+            "/open-apis/im/v1/messages?receive_id_type=user_id",
+            json_data={
+                "receive_id": user_id,
+                "msg_type": "text",
+                "content": json_mod.dumps({"text": text}),
+            },
+        )
+        return True
+    except Exception as e:
+        print(f"[Lark] Error sending DM to {user_id}: {e}")
+        return False
+
+
 def send_text_message(chat_id: str, text: str) -> bool:
     """
     Send a text message to a Lark group chat.

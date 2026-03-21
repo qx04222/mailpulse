@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from .main import run_all, run_company, sync_all
-from .config import load_companies
+from .config import settings, load_companies
 from .storage.db import db
 from .bot.server import create_bot_app
 
@@ -212,24 +212,34 @@ async def main():
     scheduler.start()
     logger.info("Scheduler started (DB-driven + manual trigger polling)")
 
-    # 运行 Bot
-    app = create_bot_app()
-    logger.info("Bot starting in polling mode...")
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(drop_pending_updates=True)
-    logger.info("Bot is running. Ctrl+C to stop.")
+    if settings.telegram_enabled and settings.telegram_bot_token:
+        # 运行 Bot
+        app = create_bot_app()
+        logger.info("Bot starting in polling mode...")
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling(drop_pending_updates=True)
+        logger.info("Bot is running. Ctrl+C to stop.")
 
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Shutting down...")
-    finally:
-        scheduler.shutdown()
-        await app.updater.stop()
-        await app.stop()
-        await app.shutdown()
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("Shutting down...")
+        finally:
+            scheduler.shutdown()
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
+    else:
+        logger.info("Telegram disabled or no bot token — running scheduler only")
+        stop_event = asyncio.Event()
+        try:
+            await stop_event.wait()
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("Shutting down...")
+        finally:
+            scheduler.shutdown()
 
 
 if __name__ == "__main__":

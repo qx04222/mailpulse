@@ -114,7 +114,14 @@ export default function PeoplePage() {
                       <RoleBadge role={person.role} t={t} />
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {person.telegram_user_id ?? "—"}
+                      <div>
+                        {person.lark_user_id ?? "—"}
+                        {person.telegram_user_id && (
+                          <div className="text-xs text-slate-400 mt-0.5">
+                            TG: {person.telegram_user_id}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       <span
@@ -201,6 +208,9 @@ function PersonForm({
   const [name, setName] = useState(person?.name ?? "");
   const [email, setEmail] = useState(person?.email ?? "");
   const [role, setRole] = useState(person?.role ?? "member");
+  const [larkUserId, setLarkUserId] = useState(
+    person?.lark_user_id ?? ""
+  );
   const [telegramUserId, setTelegramUserId] = useState(
     person?.telegram_user_id ?? ""
   );
@@ -221,6 +231,7 @@ function PersonForm({
       name,
       email,
       role,
+      lark_user_id: larkUserId || null,
       telegram_user_id: telegramUserId || null,
       is_active: isActive,
       company_ids: selectedCompanies,
@@ -311,14 +322,27 @@ function PersonForm({
             </label>
             <input
               type="text"
-              value={telegramUserId}
-              onChange={(e) => setTelegramUserId(e.target.value)}
+              value={larkUserId}
+              onChange={(e) => setLarkUserId(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               placeholder="Optional"
             />
             <p className="mt-1 text-xs text-slate-400">
               {t("people.telegramHelper")}
             </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              {t("people.telegramLegacy")}
+            </label>
+            <input
+              type="text"
+              value={telegramUserId}
+              onChange={(e) => setTelegramUserId(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="Optional"
+            />
           </div>
 
           <div className="flex items-center gap-2">

@@ -103,6 +103,7 @@ export interface DigestRun {
   high_priority: number;
   action_items_created: number;
   telegram_delivered: boolean;
+  lark_delivered: boolean;
   report_docx_url: string | null;
   report_pdf_url: string | null;
   status: "running" | "completed" | "failed";

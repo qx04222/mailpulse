@@ -120,6 +120,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
         "high_priority": 0,
         "action_items_created": 0,
         "telegram_delivered": False,
+        "lark_delivered": False,
         "report_docx_url": "",
         "report_pdf_url": "",
     }
@@ -530,24 +531,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
         except Exception:
             pass
 
-        # 12. Push Telegram group summary + DOCX attachment
-        if telegram_group_id:
-            # 先发文字摘要
-            success = send_message(telegram_group_id, telegram_brief)
-            # 再发 DOCX 报告作为附件（直接下载，不用链接）
-            if docx_bytes:
-                doc_ok = send_document(
-                    telegram_group_id,
-                    docx_bytes,
-                    filename=f"{company_name}_report_{date_range.replace('/', '-')}.docx",
-                    caption=f"{company_name} 完整周报",
-                )
-                if doc_ok:
-                    print(f"  -> DOCX sent to group")
-            stats["telegram_delivered"] = success
-            print(f"  -> Company group: {'sent' if success else 'failed'}")
-
-        # 12b. Push Lark group cards + DOCX attachment
+        # 12. Push Lark group cards + DOCX attachment (primary channel)
         lark_group_id = company.get("lark_group_id", "")
         if lark_group_id and settings.lark_enabled and settings.lark_app_id:
             try:
@@ -567,6 +551,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 card_msg_id = lark_client.send_card_message(lark_group_id, digest_card)
                 if card_msg_id:
                     print(f"  -> Lark digest card sent")
+                    stats["lark_delivered"] = True
 
                     # Track in lark_messages table
                     try:
@@ -664,13 +649,26 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
             except Exception as e:
                 print(f"  -> Lark push error: {e}")
 
+        # 12b. Push Telegram group summary + DOCX attachment (legacy fallback)
+        if telegram_group_id and settings.telegram_enabled:
+            # 先发文字摘要
+            success = send_message(telegram_group_id, telegram_brief)
+            # 再发 DOCX 报告作为附件（直接下载，不用链接）
+            if docx_bytes:
+                doc_ok = send_document(
+                    telegram_group_id,
+                    docx_bytes,
+                    filename=f"{company_name}_report_{date_range.replace('/', '-')}.docx",
+                    caption=f"{company_name} 完整周报",
+                )
+                if doc_ok:
+                    print(f"  -> DOCX sent to group")
+            stats["telegram_delivered"] = success
+            print(f"  -> Company group: {'sent' if success else 'failed'}")
+
         # 13. Push personal summaries
         for member in members:
             try:
-                telegram_user_id = member.get("telegram_user_id")
-                if not telegram_user_id:
-                    continue
-
                 member_compat = _build_person_compat(member)
                 personal_summary = await generate_personal_digest(
                     person=member_compat,
@@ -679,9 +677,22 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     pending_overdue=overdue_items + still_pending,
                     lookback_days=settings.digest_lookback_days,
                 )
-                if personal_summary:
+                if not personal_summary:
+                    continue
+
+                # Try Lark DM first
+                lark_user_id = member.get("lark_user_id")
+                if lark_user_id and settings.lark_enabled and settings.lark_app_id:
+                    from .destinations.lark import send_user_message
+                    lark_ok = send_user_message(lark_user_id, personal_summary)
+                    if lark_ok:
+                        print(f"  -> Personal Lark DM ({member['name']}): sent")
+
+                # Telegram fallback
+                telegram_user_id = member.get("telegram_user_id")
+                if telegram_user_id and settings.telegram_enabled:
                     ok = send_message(telegram_user_id, personal_summary)
-                    print(f"  -> Personal ({member['name']}): {'sent' if ok else 'failed'}")
+                    print(f"  -> Personal Telegram ({member['name']}): {'sent' if ok else 'failed'}")
             except Exception as e:
                 print(f"  -> Personal digest error ({member.get('name', '?')}): {e}")
 

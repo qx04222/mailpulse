@@ -110,7 +110,24 @@ export default function ReportsPage() {
                       <StatusBadge status={run.status} />
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {run.telegram_delivered ? t("common.yes") : t("common.no")}
+                      <div className="flex items-center gap-1.5">
+                        {run.lark_delivered ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-600">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            {t("common.yes")}
+                          </span>
+                        ) : run.telegram_delivered ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-600">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            {t("common.yes")}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">{t("common.no")}</span>
+                        )}
+                        {run.telegram_delivered && !run.lark_delivered && (
+                          <span className="text-xs text-slate-400">(TG)</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1">

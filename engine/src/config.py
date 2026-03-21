@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     gmail_client_id: str
     gmail_client_secret: str
     gmail_refresh_token: str
-    telegram_bot_token: str
+    telegram_bot_token: str = ""
+    telegram_enabled: bool = True
     supabase_url: str
     supabase_service_key: str
     digest_lookback_days: int = 3

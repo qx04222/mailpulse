@@ -300,14 +300,17 @@ export default function SchedulesPage() {
                         <td className="px-5 py-3">
                           <span
                             className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                              run.telegram_delivered
+                              run.lark_delivered || run.telegram_delivered
                                 ? "bg-emerald-50 text-emerald-700"
                                 : "bg-slate-100 text-slate-500"
                             }`}
                           >
-                            {run.telegram_delivered
+                            {run.lark_delivered || run.telegram_delivered
                               ? t("dashboard.delivered")
                               : "—"}
+                            {run.telegram_delivered && !run.lark_delivered && (
+                              <span className="ml-1 text-slate-400">(TG)</span>
+                            )}
                           </span>
                         </td>
                       </tr>
@@ -625,7 +628,7 @@ function ScheduleForm({
                 type="text"
                 value={targetGroupId}
                 onChange={(e) => setTargetGroupId(e.target.value)}
-                placeholder="e.g. -1001234567890"
+                placeholder="e.g. oc_xxxxxxxxxxxx"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>

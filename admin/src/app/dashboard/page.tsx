@@ -153,7 +153,24 @@ export default function DashboardPage() {
                         <StatusBadge status={run.status as string} />
                       </td>
                       <td className="px-5 py-3 text-slate-700">
-                        {run.telegram_delivered ? t("dashboard.delivered") : "—"}
+                        <div className="flex items-center gap-1.5">
+                          {(run.lark_delivered as boolean) ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-600">
+                              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                              {t("dashboard.delivered")}
+                            </span>
+                          ) : (run.telegram_delivered as boolean) ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-600">
+                              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                              {t("dashboard.delivered")}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                          {(run.telegram_delivered as boolean) && !(run.lark_delivered as boolean) && (
+                            <span className="text-xs text-slate-400">(TG)</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

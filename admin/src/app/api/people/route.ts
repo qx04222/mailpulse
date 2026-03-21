@@ -24,11 +24,11 @@ export async function GET() {
 export async function POST(request: Request) {
   const supabase = createAdminClient();
   const body = await request.json();
-  const { name, email, role, telegram_user_id, is_active, company_ids } = body;
+  const { name, email, role, telegram_user_id, lark_user_id, is_active, company_ids } = body;
 
   const { data, error } = await supabase
     .from("people")
-    .insert({ name, email, role, telegram_user_id, is_active: is_active ?? true })
+    .insert({ name, email, role, telegram_user_id, lark_user_id, is_active: is_active ?? true })
     .select()
     .single();
 
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const supabase = createAdminClient();
   const body = await request.json();
-  const { id, name, email, role, telegram_user_id, is_active, company_ids } = body;
+  const { id, name, email, role, telegram_user_id, lark_user_id, is_active, company_ids } = body;
 
   if (!id) {
     return Response.json({ error: "id is required" }, { status: 400 });
@@ -58,7 +58,7 @@ export async function PUT(request: Request) {
 
   const { data, error } = await supabase
     .from("people")
-    .update({ name, email, role, telegram_user_id, is_active })
+    .update({ name, email, role, telegram_user_id, lark_user_id, is_active })
     .eq("id", id)
     .select()
     .single();
