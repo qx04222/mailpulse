@@ -17,56 +17,59 @@ from ..destinations.lark import update_card
 logger = logging.getLogger(__name__)
 
 
-def _update_card_status(
-    original_card: Dict,
-    new_title: str,
-    status_line: str,
+def _get_action_item_info(item_id: str) -> Dict:
+    """Get action item details for building status card."""
+    try:
+        resp = db.table("action_items") \
+            .select("title, priority, companies(name), clients(name)") \
+            .eq("id", item_id) \
+            .limit(1) \
+            .execute()
+        if resp.data:
+            row = resp.data[0]
+            return {
+                "title": row.get("title", ""),
+                "priority": row.get("priority", "medium"),
+                "company": row.get("companies", {}).get("name", "") if row.get("companies") else "",
+                "client": row.get("clients", {}).get("name", "") if row.get("clients") else "",
+            }
+    except Exception:
+        pass
+    return {"title": item_id, "priority": "medium", "company": "", "client": ""}
+
+
+def _status_card(
+    original_title: str,
+    status_label: str,
+    status_detail: str,
     color: str,
+    info: Dict,
 ) -> Dict:
-    """
-    Keep original card content but:
-    1. Change header color + title to show status
-    2. Remove action buttons
-    3. Append status line at bottom
-    """
-    card = {
+    """Build a status card that shows what was done."""
+    elements = []
+
+    # Original info summary
+    summary = f"**{original_title}**"
+    if info.get("client"):
+        summary += f"\n客户：{info['client']}"
+    if info.get("company"):
+        summary += f"\n公司：{info['company']}"
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": summary}})
+
+    elements.append({"tag": "hr"})
+    elements.append({"tag": "div", "text": {"tag": "lark_md", "content": status_detail}})
+    elements.append({"tag": "note", "elements": [
+        {"tag": "plain_text", "content": f"MailPulse · {datetime.now().strftime('%Y-%m-%d %H:%M')}"}
+    ]})
+
+    return {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"tag": "plain_text", "content": new_title},
+            "title": {"tag": "plain_text", "content": f"{status_label} | {original_title[:40]}"},
             "template": color,
         },
-        "elements": [],
+        "elements": elements,
     }
-
-    # Copy original elements, skip action buttons
-    for elem in original_card.get("elements", []):
-        if elem.get("tag") == "action":
-            continue  # remove buttons
-        card["elements"].append(elem)
-
-    # Append status line
-    card["elements"].append({"tag": "hr"})
-    card["elements"].append({
-        "tag": "div",
-        "text": {"tag": "lark_md", "content": status_line},
-    })
-
-    return card
-
-
-def _get_original_card(message_id: str) -> Optional[Dict]:
-    """Fetch the original card content from Lark API."""
-    try:
-        from ..destinations.lark import _api_call
-        data = _api_call("GET", f"/open-apis/im/v1/messages/{message_id}")
-        items = data.get("data", {}).get("items", [])
-        if items:
-            body = items[0].get("body", {})
-            content = body.get("content", "{}")
-            return json.loads(content) if isinstance(content, str) else content
-    except Exception as e:
-        logger.warning(f"[Lark Callback] Failed to fetch original card: {e}")
-    return None
 
 
 async def handle_card_action(request: web.Request) -> web.Response:
@@ -114,17 +117,15 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
         except Exception as e:
             logger.warning(f"[Lark Callback] DB update error (handled): {e}")
 
-        # Update card: keep content, remove buttons, add status
+        # Update card to show handled status
         if message_id:
-            original = _get_original_card(message_id)
-            if original:
-                updated = _update_card_status(
-                    original,
-                    f"✅ 已处理 | {original.get('header', {}).get('title', {}).get('content', '')[:40]}",
-                    f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
-                    "green",
-                )
-                update_card(message_id, updated)
+            info = _get_action_item_info(item_id)
+            update_card(message_id, _status_card(
+                info["title"] or item_id,
+                "✅ 已处理",
+                f"✅ **{user_name}** 已处理 · {datetime.now().strftime('%m-%d %H:%M')}",
+                "green", info,
+            ))
 
         logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
 
@@ -137,15 +138,13 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
             logger.warning(f"[Lark Callback] DB update error (snooze): {e}")
 
         if message_id:
-            original = _get_original_card(message_id)
-            if original:
-                updated = _update_card_status(
-                    original,
-                    f"⏰ 稍后 | {original.get('header', {}).get('title', {}).get('content', '')[:40]}",
-                    f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
-                    "yellow",
-                )
-                update_card(message_id, updated)
+            info = _get_action_item_info(item_id)
+            update_card(message_id, _status_card(
+                info["title"] or item_id,
+                "⏰ 稍后处理",
+                f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
+                "yellow", info,
+            ))
 
         logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
 
@@ -163,15 +162,13 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
             logger.warning(f"[Lark Callback] DB update error (claim): {e}")
 
         if message_id:
-            original = _get_original_card(message_id)
-            if original:
-                updated = _update_card_status(
-                    original,
-                    f"🙋 已认领 | {original.get('header', {}).get('title', {}).get('content', '')[:40]}",
-                    f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
-                    "blue",
-                )
-                update_card(message_id, updated)
+            info = _get_action_item_info(item_id)
+            update_card(message_id, _status_card(
+                info["title"] or item_id,
+                "🙋 已认领",
+                f"🙋 **{user_name}** 已认领 · {datetime.now().strftime('%m-%d %H:%M')}",
+                "blue", info,
+            ))
 
         logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
 
