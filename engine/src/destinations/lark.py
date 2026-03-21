@@ -188,6 +188,28 @@ def send_card_message(chat_id: str, card: Dict[str, Any]) -> Optional[str]:
         return None
 
 
+def send_user_card(user_id: str, card: Dict[str, Any]) -> Optional[str]:
+    """
+    Send an interactive card message to a Lark user (DM).
+    Returns the message_id on success, None on failure.
+    """
+    try:
+        import json as json_mod
+        data = _api_call(
+            "POST",
+            "/open-apis/im/v1/messages?receive_id_type=open_id",
+            json_data={
+                "receive_id": user_id,
+                "msg_type": "interactive",
+                "content": json_mod.dumps(card),
+            },
+        )
+        return data.get("data", {}).get("message_id")
+    except Exception as e:
+        print(f"[Lark] Error sending card DM to {user_id}: {e}")
+        return None
+
+
 def upload_file(
     file_bytes: bytes,
     filename: str,

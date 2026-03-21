@@ -533,6 +533,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
             pass
 
         # 12. Push Lark group cards + DOCX attachment (primary channel)
+        personal_thread_cards: Dict[str, list] = {}
         lark_group_id = company.get("lark_group_id", "")
         if lark_group_id and settings.lark_enabled and settings.lark_app_id:
             try:
@@ -567,21 +568,25 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     except Exception:
                         pass
 
-                # Send individual cards for high-priority threads
-                for s in high_priority[:5]:
+                # Build per-person thread cards (sent as DM later, not in group)
+                from .processors.report_generator import get_people_map
+                people_map_local = get_people_map()
+                # person_id -> list of thread cards
+                personal_thread_cards: Dict[str, list] = {}
+
+                for s in high_priority[:10]:
                     item = s["item"]
                     gmail_thread_id = item.metadata.get("thread_id", item.id)
                     thread = get_thread_by_gmail_id(gmail_thread_id)
                     thread_id = thread["id"] if thread else ""
-                    from .processors.report_generator import get_people_map
-                    people_map_local = get_people_map()
 
-                    assignee_id_hp = s.get("suggested_assignee_email", "")
+                    assignee_id_hp = ""
                     assignee_name_hp = ""
                     for rec in email_records:
                         if rec["item"].id == item.id:
                             aid = rec.get("assigned_to_id")
                             if aid:
+                                assignee_id_hp = aid
                                 assignee_name_hp = people_map_local.get(aid, "")
                             break
 
@@ -595,7 +600,12 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                         email_count=1,
                         direction=s.get("direction", ""),
                     )
-                    lark_client.send_card_message(lark_group_id, thread_card)
+
+                    if assignee_id_hp:
+                        personal_thread_cards.setdefault(assignee_id_hp, []).append(thread_card)
+                    else:
+                        # Unassigned high-priority → still send to group
+                        lark_client.send_card_message(lark_group_id, thread_card)
 
                 # Send DOCX as file message
                 if docx_bytes:
@@ -667,7 +677,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
             stats["telegram_delivered"] = success
             print(f"  -> Company group: {'sent' if success else 'failed'}")
 
-        # 13. Push personal summaries
+        # 13. Push personal summaries + assigned thread cards via DM
         for member in members:
             try:
                 member_compat = _build_person_compat(member)
@@ -678,22 +688,35 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     pending_overdue=overdue_items + still_pending,
                     lookback_days=settings.digest_lookback_days,
                 )
-                if not personal_summary:
+
+                member_id = member.get("id", "")
+                lark_user_id = member.get("lark_user_id")
+                member_cards = personal_thread_cards.get(member_id, []) if personal_thread_cards else []
+
+                # Skip if nothing to send
+                if not personal_summary and not member_cards:
                     continue
 
                 # Try Lark DM first
-                lark_user_id = member.get("lark_user_id")
                 if lark_user_id and settings.lark_enabled and settings.lark_app_id:
-                    from .destinations.lark import send_user_message
-                    lark_ok = send_user_message(lark_user_id, personal_summary)
-                    if lark_ok:
-                        print(f"  -> Personal Lark DM ({member['name']}): sent")
+                    from .destinations.lark import send_user_message, send_user_card
+
+                    # Send thread cards assigned to this person
+                    for card in member_cards:
+                        send_user_card(lark_user_id, card)
+
+                    # Send personal summary text
+                    if personal_summary:
+                        lark_ok = send_user_message(lark_user_id, personal_summary)
+                        if lark_ok:
+                            print(f"  -> Personal Lark DM ({member['name']}): sent ({len(member_cards)} cards + summary)")
 
                 # Telegram fallback
                 telegram_user_id = member.get("telegram_user_id")
                 if telegram_user_id and settings.telegram_enabled:
-                    ok = send_message(telegram_user_id, personal_summary)
-                    print(f"  -> Personal Telegram ({member['name']}): {'sent' if ok else 'failed'}")
+                    if personal_summary:
+                        ok = send_message(telegram_user_id, personal_summary)
+                        print(f"  -> Personal Telegram ({member['name']}): {'sent' if ok else 'failed'}")
             except Exception as e:
                 print(f"  -> Personal digest error ({member.get('name', '?')}): {e}")
 
