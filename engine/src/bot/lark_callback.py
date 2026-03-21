@@ -35,49 +35,48 @@ async def handle_card_action(request: web.Request) -> web.Response:
 
 async def _process_card_action(body: Dict[str, Any]) -> web.Response:
     """Process a card button click."""
+    action = body.get("action", {})
+    value_str = action.get("value", "{}")
     try:
-        action = body.get("action", {})
-        value_str = action.get("value", "{}")
         value = json.loads(value_str) if isinstance(value_str, str) else value_str
+    except Exception:
+        value = {}
 
-        action_type = value.get("action", "")
-        item_id = value.get("item_id", "")
+    action_type = value.get("action", "")
+    item_id = value.get("item_id", "")
+    open_id = body.get("open_id", "")
+    user_name = _get_user_name(open_id)
 
-        if not item_id:
-            return web.json_response({"ok": True})
-
-        # Get the user who clicked
-        open_id = body.get("open_id", "")
-        user_name = _get_user_name(open_id)
-
-        if action_type == "handled":
+    if action_type == "handled":
+        try:
             mark_resolved(item_id, note=f"Handled by {user_name}")
             db.table("action_items").update({
                 "dm_acknowledged": True,
                 "dm_acknowledged_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", item_id).execute()
+        except Exception as e:
+            logger.warning(f"[Lark Callback] DB update error (handled): {e}")
 
-            logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
+        logger.info(f"[Lark Callback] Item {item_id} marked handled by {user_name}")
+        return web.json_response({
+            "toast": {"type": "success", "content": "已标记为已处理 ✅"},
+        })
 
-            # Return updated card
-            return web.json_response({
-                "toast": {"type": "success", "content": f"已标记为已处理 ✅"},
-            })
-
-        elif action_type == "snooze":
-            # Reset dm_sent_at to now → gives another 24h before escalation
+    elif action_type == "snooze":
+        try:
             db.table("action_items").update({
                 "dm_sent_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", item_id).execute()
+        except Exception as e:
+            logger.warning(f"[Lark Callback] DB update error (snooze): {e}")
 
-            logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
+        logger.info(f"[Lark Callback] Item {item_id} snoozed by {user_name}")
+        return web.json_response({
+            "toast": {"type": "info", "content": "已延后提醒 ⏰"},
+        })
 
-            return web.json_response({
-                "toast": {"type": "info", "content": "已延后提醒 ⏰"},
-            })
-
-        elif action_type == "claim":
-            # Someone in the group claims the escalated task
+    elif action_type == "claim":
+        try:
             person_id = _get_person_id(open_id)
             if person_id:
                 db.table("action_items").update({
@@ -86,17 +85,17 @@ async def _process_card_action(body: Dict[str, Any]) -> web.Response:
                     "dm_acknowledged_at": datetime.now(timezone.utc).isoformat(),
                     "status": "in_progress",
                 }).eq("id", item_id).execute()
+        except Exception as e:
+            logger.warning(f"[Lark Callback] DB update error (claim): {e}")
 
-            logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
+        logger.info(f"[Lark Callback] Item {item_id} claimed by {user_name}")
+        return web.json_response({
+            "toast": {"type": "success", "content": f"{user_name} 已认领 🙋"},
+        })
 
-            return web.json_response({
-                "toast": {"type": "success", "content": f"{user_name} 已认领 🙋"},
-            })
-
-    except Exception as e:
-        logger.error(f"[Lark Callback] Error: {e}")
-
-    return web.json_response({"ok": True})
+    return web.json_response({
+        "toast": {"type": "info", "content": "操作已收到"},
+    })
 
 
 def _get_user_name(open_id: str) -> str:
