@@ -264,3 +264,91 @@ def build_task_card(
         "header": _header(f"📋 {title[:60]}", template),
         "elements": elements,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# 5. 每日待办卡片（私聊推送）
+# ══════════════════════════════════════════════════════════════
+
+def build_daily_todo_card(
+    person_name: str,
+    date_str: str,
+    urgent_items: Optional[List[Dict]] = None,
+    pending_items: Optional[List[Dict]] = None,
+    followup_items: Optional[List[Dict]] = None,
+) -> Dict[str, Any]:
+    """每日待办摘要卡片"""
+    urgent = urgent_items or []
+    pending = pending_items or []
+    followups = followup_items or []
+    total = len(urgent) + len(pending) + len(followups)
+
+    elements = []
+
+    if total == 0:
+        elements.append(_text("✨ 今天没有待处理事项，状态良好！"))
+        elements.append(_note(f"MailPulse · {date_str}"))
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": _header(f"📋 {person_name} · {date_str} · 无待办", "green"),
+            "elements": elements,
+        }
+
+    # 紧急/超期
+    if urgent:
+        urgent_md = "🔴 **需立即处理**\n"
+        for i, item in enumerate(urgent[:5], 1):
+            title = item.get("title", "")[:50]
+            days = item.get("days_pending", 0)
+            suffix = f" — 等待 {days} 天" if days else ""
+            urgent_md += f"{i}. {title}{suffix}\n"
+        elements.append(_text(urgent_md))
+        # 按钮：处理第一个紧急项
+        if urgent[0].get("id"):
+            elements.append({
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "✅ 处理第一项"},
+                        "type": "primary",
+                        "value": {"action": "handled", "item_id": urgent[0]["id"]},
+                    },
+                ],
+            })
+        elements.append(_hr())
+
+    # 需跟进
+    if followups:
+        followup_md = "📧 **需跟进**\n"
+        for i, item in enumerate(followups[:5], 1):
+            subject = item.get("subject", "")[:50]
+            reason = item.get("reason", "")
+            followup_md += f"{i}. {subject}\n"
+            if reason:
+                followup_md += f"   _{reason}_\n"
+        elements.append(_text(followup_md))
+        elements.append(_hr())
+
+    # 进行中
+    if pending:
+        pending_md = "🟡 **进行中**\n"
+        for i, item in enumerate(pending[:5], 1):
+            title = item.get("title", "")[:50]
+            pending_md += f"{i}. {title}\n"
+        elements.append(_text(pending_md))
+
+    elements.append(_note(
+        f"MailPulse · {date_str} · "
+        f"{'🔴' if urgent else '🟢'} {total} 项待办"
+    ))
+
+    color = "red" if urgent else ("yellow" if followups else "blue")
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": _header(
+            f"📋 {person_name} 的今日待办 · {date_str}",
+            color,
+        ),
+        "elements": elements,
+    }

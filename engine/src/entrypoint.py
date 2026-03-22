@@ -13,6 +13,7 @@ from .config import settings, load_companies
 from .storage.db import db
 from .bot.server import create_bot_app
 from .bot.lark_callback import create_callback_app
+from .bot.daily_todo import send_all_daily_todos
 
 logging.basicConfig(
     level=logging.INFO,
@@ -210,8 +211,16 @@ async def main():
         name="Reload Schedules from DB",
     )
 
+    # 每日待办推送：9:30 AM
+    scheduler.add_job(
+        send_all_daily_todos,
+        CronTrigger(hour=9, minute=30, day_of_week="mon-sat", timezone="America/Toronto"),
+        id="daily_todo",
+        name="Daily Todo Push",
+    )
+
     scheduler.start()
-    logger.info("Scheduler started (DB-driven + manual trigger polling)")
+    logger.info("Scheduler started (DB-driven + manual trigger polling + daily todo)")
 
     # Start Lark callback server FIRST (for card button clicks)
     callback_runner = None

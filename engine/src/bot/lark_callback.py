@@ -13,11 +13,13 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTrigger,
     P2CardActionTriggerResponse,
 )
+from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
 from aiohttp import web
 
 from ..config import settings
 from ..storage.db import db
 from ..storage.action_items import mark_resolved
+from .lark_message import handle_lark_message
 
 logger = logging.getLogger(__name__)
 
@@ -129,13 +131,15 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
     })
 
 
-# Build the SDK v2 event handler
+# Build the SDK v2 event handler (card actions + message receive)
 _event_handler = lark.EventDispatcherHandler.builder(
     settings.lark_encrypt_key,
     settings.lark_verification_token,
     lark.LogLevel.DEBUG,
 ).register_p2_card_action_trigger(
     _handle_card_action
+).register_p2_im_message_receive_v1(
+    handle_lark_message
 ).build()
 
 
