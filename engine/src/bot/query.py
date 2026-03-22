@@ -1,14 +1,14 @@
 """
 AI-driven email query: single-pass Sonnet for both intent extraction and answer.
 Fetches pre-indexed data from Supabase, scoped to user's companies.
+Supports keyword search + time range extraction from natural language.
 """
-import json
 import re
 from typing import Optional, Dict, Any, List
 
 from anthropic import AsyncAnthropic
 from ..config import settings, load_companies
-from ..storage.emails import get_emails_by_company
+from ..storage.emails import get_emails_by_company, search_emails
 from ..storage.action_items import get_pending_items
 
 client = AsyncAnthropic(api_key=settings.anthropic_api_key)
@@ -85,6 +85,47 @@ def _guess_company(question: str, companies: List[Dict]) -> Optional[Dict]:
     return None
 
 
+def _extract_time_range(question: str) -> int:
+    """Extract time range from question. Returns days."""
+    q = question.lower()
+    if any(w in q for w in ["上个月", "一个月", "30天", "last month"]):
+        return 30
+    if any(w in q for w in ["两周", "半个月", "15天", "two weeks"]):
+        return 14
+    if any(w in q for w in ["上周", "一周", "last week", "7天"]):
+        return 7
+    if any(w in q for w in ["今天", "today"]):
+        return 1
+    if any(w in q for w in ["昨天", "yesterday"]):
+        return 2
+    if any(w in q for w in ["这周", "本周", "this week"]):
+        return 7
+    if any(w in q for w in ["最近", "近期"]):
+        return 14
+    # Default
+    return 7
+
+
+def _extract_search_keyword(question: str, companies: List[Dict]) -> Optional[str]:
+    """Extract a search keyword from the question (names, topics, etc.)."""
+    q = question
+    # Remove common question words
+    noise = ["帮我找", "帮我查", "搜索", "找一下", "查一下", "关于", "有没有",
+             "最近", "上周", "上个月", "今天", "昨天", "的邮件", "邮件",
+             "什么", "怎么样", "如何", "是否", "有", "吗", "呢", "了",
+             "需要处理", "待处理", "高优", "紧急"]
+    for n in noise:
+        q = q.replace(n, " ")
+    # Remove company names
+    for c in companies:
+        q = q.replace(c["name"], " ").replace(c["name"].lower(), " ")
+    q = q.strip()
+    # If anything meaningful remains, use it as search keyword
+    if len(q) >= 2:
+        return q
+    return None
+
+
 async def process_query(
     question: str,
     chat_context: Optional[List] = None,
@@ -92,7 +133,7 @@ async def process_query(
 ) -> str:
     """
     Single-pass query: fetch relevant emails → Sonnet answers directly.
-    No separate intent extraction step.
+    Supports keyword search and wider time windows.
     """
     companies = load_companies()
 
@@ -105,25 +146,45 @@ async def process_query(
 
     # Try to match a specific company from the question
     company = _guess_company(question, companies)
-    days = 7
+    days = _extract_time_range(question)
+    keyword = _extract_search_keyword(question, companies)
 
-    # Fetch emails
-    if company:
-        rows = get_emails_by_company(company["id"], days=days, limit=30)
-    else:
-        rows = []
-        per_company_limit = max(3, 20 // len(companies))
-        for c in companies:
-            rows.extend(get_emails_by_company(c["id"], days=days, limit=per_company_limit))
+    # Fetch emails — try keyword search first, fallback to date-based
+    rows = []
+    scoped_ids = [company["id"]] if company else [c["id"] for c in companies]
+
+    if keyword:
+        rows = search_emails(
+            keyword=keyword,
+            company_ids=scoped_ids,
+            days=max(days, 30),  # search wider for keyword queries
+            limit=30,
+        )
+
+    # If keyword search got few results, supplement with date-based fetch
+    if len(rows) < 10:
+        if company:
+            date_rows = get_emails_by_company(company["id"], days=days, limit=30)
+        else:
+            date_rows = []
+            per_limit = max(3, 20 // len(companies))
+            for c in companies:
+                date_rows.extend(get_emails_by_company(c["id"], days=days, limit=per_limit))
+        # Merge without duplicates
+        existing_ids = {r.get("id") for r in rows}
+        for r in date_rows:
+            if r.get("id") not in existing_ids:
+                rows.append(r)
+                if len(rows) >= 40:
+                    break
 
     # Get action items
     action_items = []
-    target_companies = [company] if company else companies
-    for c in target_companies:
+    for c in ([company] if company else companies):
         action_items.extend(get_pending_items(c["id"]))
 
     # Build prompt
-    email_context = _format_emails_for_context(rows)
+    email_context = _format_emails_for_context(rows[:40])
     action_context = _format_actions_for_context(action_items)
 
     prompt = UNIFIED_PROMPT.format(

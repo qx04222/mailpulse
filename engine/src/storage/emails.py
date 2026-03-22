@@ -257,3 +257,29 @@ def count_thread_emails(gmail_thread_id: str) -> int:
         .eq("gmail_thread_id", gmail_thread_id) \
         .execute()
     return resp.count or 0
+
+
+def search_emails(
+    keyword: str,
+    company_ids: Optional[List[str]] = None,
+    days: int = 30,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """Search emails by keyword across subject, body_preview, sender, client_name."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    pattern = f"%{keyword}%"
+
+    query = db.table("emails") \
+        .select("*") \
+        .gte("received_at", cutoff) \
+        .or_(f"subject.ilike.{pattern},body_preview.ilike.{pattern},sender_email.ilike.{pattern},client_name.ilike.{pattern}") \
+        .order("received_at", desc=True) \
+        .limit(limit)
+
+    if company_ids and len(company_ids) == 1:
+        query = query.eq("company_id", company_ids[0])
+    elif company_ids:
+        query = query.in_("company_id", company_ids)
+
+    resp = query.execute()
+    return resp.data or []

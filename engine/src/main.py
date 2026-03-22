@@ -304,6 +304,12 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 return_exceptions=True,
             )
             new_scored = [s for s in scored if isinstance(s, dict)]
+            # Log scoring failures
+            scoring_errors = [(new_items_to_score[i], s) for i, s in enumerate(scored) if isinstance(s, Exception)]
+            for item, err in scoring_errors:
+                print(f"  -> Scoring failed [{item.subject[:40]}]: {err}")
+            if scoring_errors:
+                print(f"  -> {len(scoring_errors)} scoring failures (will retry next sync)")
         else:
             new_scored = []
 
@@ -363,21 +369,22 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 "sync_only": True,
             }
 
-        # 6. Check followup status (compare pending action_items with new threads)
+        # 6. Check followup status — only resolve when CLIENT replies (inbound)
         pending_items = get_pending_items(company_id)
-        current_thread_ids = set()
+        inbound_thread_ids = set()
         for rec in email_records:
             tid = rec.get("thread_id")
-            if tid:
-                current_thread_ids.add(tid)
+            direction = rec.get("direction", "")
+            if tid and direction == "inbound" and not rec.get("skipped"):
+                inbound_thread_ids.add(tid)
 
         resolved_count = 0
         overdue_items = []
         still_pending = []
         for ai in pending_items:
             tid = ai.get("thread_id")
-            if tid and tid in current_thread_ids:
-                mark_resolved_by_thread(tid, note="auto: new activity in thread")
+            if tid and tid in inbound_thread_ids:
+                mark_resolved_by_thread(tid, note="auto: client replied")
                 resolved_count += 1
             elif ai["status"] == "overdue":
                 overdue_items.append(ai)

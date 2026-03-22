@@ -67,8 +67,9 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
     elif action_type == "snooze":
         try:
             db.table("action_items").update({
-                "status": "in_progress",
-                "dm_sent_at": None,
+                "status": "pending",
+                "snoozed_at": datetime.now(timezone.utc).isoformat(),
+                # Keep dm_sent_at intact so escalation safety net still works
             }).eq("id", item_id).execute()
         except Exception as e:
             logger.warning(f"[Lark Card] DB error (snooze): {e}")
@@ -77,7 +78,7 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
         card = _status_card(
             info["title"] or item_id,
             "⏰ 稍后处理",
-            f"⏰ **{user_name}** 稍后处理 · 下次推送时再提醒",
+            f"⏰ **{user_name}** 稍后处理 · 下次每日待办中再提醒",
             "yellow", info, item_id=item_id,
         )
 
