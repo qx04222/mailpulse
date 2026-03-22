@@ -517,6 +517,38 @@ async def _broadcast_file(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def _broadcast_welcome(request: web.Request) -> web.Response:
+    """Send welcome message to all active employees via DM (text only, no file)."""
+    from ..config import load_people
+    from ..destinations.lark import send_user_message
+
+    people = load_people()
+    sent = 0
+    for person in people:
+        open_id = person.get("lark_user_id")
+        if not open_id or not person.get("is_active", True):
+            continue
+        name = person.get("name", "")
+        welcome = (
+            f"Hi {name}，\n\n"
+            f"欢迎使用 MailPulse AI 邮件助手！从现在开始，我会帮你：\n\n"
+            f"-- 每天 9:30 推送待办提醒\n"
+            f"-- 紧急邮件实时通知\n"
+            f"-- 24h 未处理自动升级到群\n"
+            f"-- 随时提问查邮件、找客户、看数据\n\n"
+            f"你可以直接给我发消息试试，比如：\n"
+            f"「最近有什么需要处理的？」\n"
+            f"「帮我找关于报价的邮件」\n\n"
+            f"详细功能指南请查看群公告中的 PDF 文件。"
+        )
+        ok = send_user_message(open_id, welcome)
+        if ok:
+            sent += 1
+
+    logger.info(f"[Broadcast] Welcome sent to {sent} people")
+    return web.json_response({"ok": True, "sent": sent})
+
+
 def create_callback_app() -> web.Application:
     import os
     app = web.Application()
@@ -524,6 +556,7 @@ def create_callback_app() -> web.Application:
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
     app.router.add_get("/init-topics", _init_topics)
     app.router.add_post("/broadcast-file", _broadcast_file)
+    app.router.add_get("/broadcast-welcome", _broadcast_welcome)
     if os.environ.get("ENABLE_TEST_ENDPOINTS"):
         app.router.add_get("/test-card", _send_test_card)
     return app
