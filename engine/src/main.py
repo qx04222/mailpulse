@@ -68,6 +68,7 @@ from .destinations.lark_cards import (
 )
 from .destinations.lark_base import sync_threads_to_base, create_thread_table
 from .destinations.lark_calendar import sync_followups_to_calendar
+from .destinations.lark_topics import send_to_topic, send_file_to_topic
 from .destinations.lark_calendar_acl import sync_calendar_acl
 from .processors.escalation import check_unacknowledged_dms
 
@@ -597,9 +598,10 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     group_reports=structured_data.get("group_reports", {}),
                     top_actions=structured_data.get("priority_actions", [])[:5],
                 )
-                card_msg_id = lark_client.send_card_message(lark_group_id, digest_card)
+                # Send digest card to 📊 report topic
+                card_msg_id = send_to_topic(company_id, lark_group_id, "report", digest_card)
                 if card_msg_id:
-                    print(f"  -> Lark digest card sent")
+                    print(f"  -> Lark digest card sent (report topic)")
                     stats["lark_delivered"] = True
 
                     # Track in lark_messages table
@@ -670,18 +672,18 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                             {"card": thread_card, "action_item_id": action_item_id}
                         )
                     else:
-                        # Unassigned high-priority → still send to group
-                        lark_client.send_card_message(lark_group_id, thread_card)
+                        # Unassigned high-priority → send to 🔴 urgent topic
+                        send_to_topic(company_id, lark_group_id, "urgent", thread_card)
 
-                # Send DOCX as file message
+                # Send DOCX to 📊 report topic
                 if docx_bytes:
-                    doc_ok = lark_client.send_document(
-                        lark_group_id,
+                    doc_ok = send_file_to_topic(
+                        company_id, lark_group_id, "report",
                         docx_bytes,
                         filename=f"{company_name}_report_{date_range.replace('/', '-')}.docx",
                     )
                     if doc_ok:
-                        print(f"  -> Lark DOCX sent to group")
+                        print(f"  -> Lark DOCX sent to report topic")
 
                 # Sync threads to Lark Base (多维表格)
                 lark_base_app_token = company.get("lark_base_app_token", "")

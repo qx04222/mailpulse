@@ -10,6 +10,7 @@ from typing import Dict, Any, List
 from ..storage.db import db
 from ..destinations import lark as lark_client
 from ..destinations.lark_cards import build_escalation_card
+from ..destinations.lark_topics import send_to_topic
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def check_unacknowledged_dms(
                 company_name=company_name,
             )
 
-            msg_id = lark_client.send_card_message(lark_group_id, card)
+            msg_id = send_to_topic(company_id, lark_group_id, "urgent", card)
             if msg_id:
                 db.table("action_items").update({
                     "escalated_to_group": True,

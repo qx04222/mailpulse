@@ -213,6 +213,64 @@ def send_user_card(user_id: str, card: Dict[str, Any]) -> Optional[str]:
         return None
 
 
+def reply_card_message(parent_message_id: str, card: Dict[str, Any]) -> Optional[str]:
+    """
+    Reply to an existing message with a card (for topic groups).
+    The reply appears under the same topic thread.
+    Returns the new message_id on success, None on failure.
+    """
+    try:
+        import json as json_mod
+        data = _api_call(
+            "POST",
+            f"/open-apis/im/v1/messages/{parent_message_id}/reply",
+            json_data={
+                "msg_type": "interactive",
+                "content": json_mod.dumps(card),
+            },
+        )
+        return data.get("data", {}).get("message_id")
+    except Exception as e:
+        logger.error(f"[Lark] Error replying card to {parent_message_id}: {e}")
+        return None
+
+
+def reply_text_message(parent_message_id: str, text: str) -> Optional[str]:
+    """Reply to an existing message with text (for topic groups)."""
+    try:
+        import json as json_mod
+        data = _api_call(
+            "POST",
+            f"/open-apis/im/v1/messages/{parent_message_id}/reply",
+            json_data={
+                "msg_type": "text",
+                "content": json_mod.dumps({"text": text}),
+            },
+        )
+        return data.get("data", {}).get("message_id")
+    except Exception as e:
+        logger.error(f"[Lark] Error replying text to {parent_message_id}: {e}")
+        return None
+
+
+def reply_file_message(parent_message_id: str, file_key: str) -> Optional[str]:
+    """Reply to an existing message with a file (for topic groups)."""
+    try:
+        import json as json_mod
+        data = _api_call(
+            "POST",
+            f"/open-apis/im/v1/messages/{parent_message_id}/reply",
+            json_data={
+                "msg_type": "file",
+                "content": json_mod.dumps({"file_key": file_key}),
+            },
+        )
+        return data.get("data", {}).get("message_id")
+    except Exception as e:
+        logger.error(f"[Lark] Error replying file to {parent_message_id}: {e}")
+        return None
+
+
 def update_card(message_id: str, card: Dict[str, Any]) -> bool:
     """
     Update an existing card message by message_id.
