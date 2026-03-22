@@ -476,7 +476,7 @@ async def _broadcast_file(request: web.Request) -> web.Response:
             return web.json_response({"error": "missing 'file' field"}, status=400)
 
         filename = field.filename or "document.pdf"
-        file_bytes = await field.read()
+        file_bytes = bytes(await field.read())
 
         # Upload file — try direct upload, capture Lark error
         logger.info(f"[Broadcast] Uploading {filename} ({len(file_bytes)} bytes)")
