@@ -119,6 +119,56 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
         # Rebuild original card with action buttons
         card = _original_card_with_buttons(info, item_id)
 
+    elif action_type == "calendar_accept":
+        proposal_id = value.get("proposal_id", "")
+        try:
+            resp = db.table("calendar_proposals") \
+                .select("*") \
+                .eq("id", proposal_id) \
+                .single() \
+                .execute()
+            proposal = resp.data
+            if proposal:
+                # Create Lark calendar event
+                from ..destinations.lark_calendar import create_single_event
+                event_id = create_single_event(
+                    calendar_id=None,  # Use default company calendar
+                    title=proposal.get("event_title", ""),
+                    start_time=proposal.get("event_start", ""),
+                    end_time=proposal.get("event_end", ""),
+                    description=f"From email. Created by {user_name}",
+                )
+                db.table("calendar_proposals").update({
+                    "status": "created",
+                    "lark_event_id": event_id or "",
+                }).eq("id", proposal_id).execute()
+
+                card = _status_card(
+                    proposal.get("event_title", ""),
+                    "✅ 已添加日历",
+                    f"✅ **{user_name}** 已创建日历事件",
+                    "green", {"title": proposal.get("event_title", ""), "client": "", "company": ""},
+                )
+        except Exception as e:
+            logger.warning(f"[Lark Card] Calendar accept error: {e}")
+            card = _status_card("日历事件", "⚠️ 创建失败", f"创建失败: {str(e)[:50]}", "red",
+                              {"title": "日历事件", "client": "", "company": ""})
+
+    elif action_type == "calendar_reject":
+        proposal_id = value.get("proposal_id", "")
+        try:
+            db.table("calendar_proposals").update({
+                "status": "rejected",
+            }).eq("id", proposal_id).execute()
+        except Exception as e:
+            logger.warning(f"[Lark Card] Calendar reject error: {e}")
+
+        card = _status_card(
+            "日历提案", "❌ 已忽略",
+            f"❌ **{user_name}** 已忽略此日程提案",
+            "grey", {"title": "日历提案", "client": "", "company": ""},
+        )
+
     if card:
         return P2CardActionTriggerResponse({
             "toast": {"type": "success", "content": "操作成功"},

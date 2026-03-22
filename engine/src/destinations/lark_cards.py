@@ -409,3 +409,61 @@ def build_weekly_report_card(
         "header": _header(f"📊 {person_name} 周报 · {period}", color),
         "elements": elements,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# 7. 日历提案卡片
+# ══════════════════════════════════════════════════════════════
+
+def build_calendar_proposal_card(
+    proposal_id: str,
+    event_title: str,
+    event_start: str,
+    event_end: str = "",
+    location: str = "",
+    attendees: Optional[List[str]] = None,
+    source_subject: str = "",
+) -> Dict[str, Any]:
+    """日历提案确认卡片 — 用户点击创建或忽略"""
+    elements = []
+
+    info = f"**主题：** {event_title}\n"
+    info += f"**时间：** {event_start}"
+    if event_end:
+        info += f" ~ {event_end}"
+    info += "\n"
+    if location:
+        info += f"**地点：** {location}\n"
+    if attendees:
+        info += f"**参与人：** {', '.join(attendees)}\n"
+    if source_subject:
+        info += f"\n_来源邮件：{source_subject}_"
+
+    elements.append(_text(info))
+
+    # Confirm / Reject buttons
+    elements.append({
+        "tag": "action",
+        "actions": [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "✅ 添加到日历"},
+                "type": "primary",
+                "value": {"action": "calendar_accept", "proposal_id": proposal_id},
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "❌ 忽略"},
+                "type": "default",
+                "value": {"action": "calendar_reject", "proposal_id": proposal_id},
+            },
+        ],
+    })
+
+    elements.append(_note(f"MailPulse · 检测到日程安排"))
+
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": _header(f"📅 日程提案 | {event_title[:40]}", "purple"),
+        "elements": elements,
+    }
