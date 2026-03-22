@@ -460,12 +460,65 @@ async def _init_topics(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "topics": results})
 
 
+async def _broadcast_file(request: web.Request) -> web.Response:
+    """
+    Broadcast a pre-uploaded file to all active employees via DM.
+    Usage: POST /broadcast-file with multipart form: file=<pdf>
+    Also sends a text message before the file.
+    """
+    from ..config import load_people
+    from ..destinations.lark import upload_file, send_user_file, send_user_message
+
+    try:
+        reader = await request.multipart()
+        field = await reader.next()
+        if not field or field.name != "file":
+            return web.json_response({"error": "missing 'file' field"}, status=400)
+
+        filename = field.filename or "document.pdf"
+        file_bytes = await field.read()
+
+        # Upload file once
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        type_map = {"pdf": "pdf", "doc": "doc", "docx": "doc"}
+        file_type = type_map.get(ext, "stream")
+        file_key = upload_file(file_bytes, filename, file_type=file_type)
+        if not file_key:
+            return web.json_response({"error": "file upload failed"}, status=500)
+
+        # Send to all active people with lark_user_id
+        people = load_people()
+        sent = 0
+        failed = 0
+        for person in people:
+            open_id = person.get("lark_user_id")
+            if not open_id or not person.get("is_active", True):
+                continue
+            # Send intro message first
+            send_user_message(open_id,
+                f"Hi {person.get('name', '')}，这是 MailPulse Bot 功能使用指南，请查收：")
+            # Send file
+            ok = send_user_file(open_id, file_key)
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+
+        logger.info(f"[Broadcast] File '{filename}' sent to {sent} people, {failed} failed")
+        return web.json_response({"ok": True, "sent": sent, "failed": failed, "file_key": file_key})
+
+    except Exception as e:
+        logger.error(f"[Broadcast] Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 def create_callback_app() -> web.Application:
     import os
     app = web.Application()
     app.router.add_post("/lark/callback", handle_lark_callback)
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
     app.router.add_get("/init-topics", _init_topics)
+    app.router.add_post("/broadcast-file", _broadcast_file)
     if os.environ.get("ENABLE_TEST_ENDPOINTS"):
         app.router.add_get("/test-card", _send_test_card)
     return app
