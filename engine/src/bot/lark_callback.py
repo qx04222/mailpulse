@@ -567,6 +567,18 @@ async def _broadcast_welcome(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "sent": sent})
 
 
+async def _introduce(request: web.Request) -> web.Response:
+    """Send bot self-introduction to groups and/or DMs."""
+    from .introduce import send_introduce
+
+    # Parse query params: ?group=1&dm=1 (both default to true)
+    to_group = request.query.get("group", "1") == "1"
+    to_dm = request.query.get("dm", "1") == "1"
+
+    result = await send_introduce(to_group=to_group, to_dm=to_dm)
+    return web.json_response({"ok": True, **result})
+
+
 def create_callback_app() -> web.Application:
     import os
     app = web.Application()
@@ -575,6 +587,7 @@ def create_callback_app() -> web.Application:
     app.router.add_get("/init-topics", _init_topics)
     app.router.add_post("/broadcast-file", _broadcast_file)
     app.router.add_get("/broadcast-welcome", _broadcast_welcome)
+    app.router.add_get("/introduce", _introduce)
     if os.environ.get("ENABLE_TEST_ENDPOINTS"):
         app.router.add_get("/test-card", _send_test_card)
     return app
