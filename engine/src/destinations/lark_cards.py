@@ -294,7 +294,7 @@ def build_daily_todo_card(
             "elements": elements,
         }
 
-    # 紧急/超期
+    # 紧急/超期 — 每项带独立按钮（最多3项）
     if urgent:
         urgent_md = "🔴 **需立即处理**\n"
         for i, item in enumerate(urgent[:5], 1):
@@ -303,19 +303,18 @@ def build_daily_todo_card(
             suffix = f" — 等待 {days} 天" if days else ""
             urgent_md += f"{i}. {title}{suffix}\n"
         elements.append(_text(urgent_md))
-        # 按钮：处理第一个紧急项
-        if urgent[0].get("id"):
-            elements.append({
-                "tag": "action",
-                "actions": [
-                    {
-                        "tag": "button",
-                        "text": {"tag": "plain_text", "content": "✅ 处理第一项"},
-                        "type": "primary",
-                        "value": {"action": "handled", "item_id": urgent[0]["id"]},
-                    },
-                ],
-            })
+        # Per-item buttons for top 3 urgent items
+        buttons = []
+        for item in urgent[:3]:
+            if item.get("id"):
+                buttons.append({
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": f"✅ {item.get('title', '')[:12]}"},
+                    "type": "primary",
+                    "value": {"action": "handled", "item_id": item["id"]},
+                })
+        if buttons:
+            elements.append({"tag": "action", "actions": buttons})
         elements.append(_hr())
 
     # 需跟进

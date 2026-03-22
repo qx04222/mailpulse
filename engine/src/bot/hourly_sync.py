@@ -5,7 +5,7 @@ High-priority emails (score >= 4) get instant Lark DM to the assignee.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from ..config import reload_config, load_companies, load_people, get_person_by_id
 from ..main import run_company
@@ -66,6 +66,43 @@ def _record_notification(company_id: str, email_id: str, person_id: str):
         pass
 
 
+def _ensure_action_item(email: Dict, company_id: str, assigned_to_id: str) -> Optional[str]:
+    """Find or create an action_item for an urgent email. Returns item_id."""
+    thread_id = email.get("thread_id")
+    try:
+        # Check if action_item already exists for this thread
+        if thread_id:
+            resp = db.table("action_items") \
+                .select("id") \
+                .eq("thread_id", thread_id) \
+                .eq("company_id", company_id) \
+                .in_("status", ["pending", "in_progress", "overdue"]) \
+                .limit(1) \
+                .execute()
+            if resp.data:
+                return resp.data[0]["id"]
+
+        # Create new action_item
+        score = email.get("score", 4)
+        priority = "high" if score >= 5 else "medium"
+        resp = db.table("action_items").insert({
+            "company_id": company_id,
+            "thread_id": thread_id,
+            "email_id": email.get("id"),
+            "title": email.get("subject", "")[:200],
+            "priority": priority,
+            "status": "pending",
+            "assigned_to_id": assigned_to_id,
+            "description": email.get("one_line", ""),
+            "seen_count": 1,
+        }).execute()
+        if resp.data:
+            return resp.data[0]["id"]
+    except Exception as e:
+        logger.error(f"[Hourly] Error ensuring action_item: {e}")
+    return None
+
+
 async def notify_urgent_emails(company: Dict[str, Any]):
     """Send instant Lark DM for high-priority emails found during sync."""
     company_id = company["id"]
@@ -92,7 +129,10 @@ async def notify_urgent_emails(company: Dict[str, Any]):
         if not person or not person.get("lark_user_id"):
             continue
 
-        # Build a quick notification card
+        # Ensure an action_item exists for this urgent email
+        action_item_id = _ensure_action_item(email, company_id, assigned_id)
+
+        # Build notification card with action buttons
         card = build_client_thread_card(
             thread_id=email.get("thread_id", ""),
             subject=email.get("subject", ""),
@@ -102,12 +142,20 @@ async def notify_urgent_emails(company: Dict[str, Any]):
             assignee=person.get("name", ""),
             email_count=1,
             direction="inbound",
-            action_item_id=None,
+            action_item_id=action_item_id,
         )
 
         msg_id = send_user_card(person["lark_user_id"], card)
         if msg_id:
             _record_notification(company_id, email_id, assigned_id)
+            # Track DM sent time for escalation
+            if action_item_id:
+                try:
+                    db.table("action_items").update({
+                        "dm_sent_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("id", action_item_id).execute()
+                except Exception:
+                    pass
             sent += 1
             logger.info(f"[Hourly] Urgent notify: {email['subject'][:40]} -> {person['name']}")
 
