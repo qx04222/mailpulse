@@ -351,3 +351,61 @@ def build_daily_todo_card(
         ),
         "elements": elements,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# 6. 个人周报卡片
+# ══════════════════════════════════════════════════════════════
+
+def build_weekly_report_card(
+    person_name: str,
+    period: str,
+    stats: Dict[str, Any],
+    highlights: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """个人周报卡片 — 异常优先设计"""
+    elements = []
+
+    # 数据概览
+    total = stats.get("emails_total", 0)
+    inbound = stats.get("emails_inbound", 0)
+    outbound = stats.get("emails_outbound", 0)
+    high = stats.get("high_priority", 0)
+    created = stats.get("action_items_created", 0)
+    resolved = stats.get("action_items_resolved", 0)
+    pending = stats.get("pending_items", 0)
+
+    overview = (
+        f"📧 邮件：**{total}** 封（收 {inbound} / 发 {outbound}）\n"
+        f"🔴 高优先：**{high}** 封\n"
+        f"📋 任务：创建 **{created}** / 完成 **{resolved}**"
+    )
+    if pending > 0:
+        overview += f" / ⚠️ 待处理 **{pending}**"
+    elements.append(_text(overview))
+    elements.append(_hr())
+
+    # AI 亮点 / 异常
+    if highlights:
+        highlights_md = "💡 **本周要点**\n"
+        for h in highlights:
+            highlights_md += f"• {h}\n"
+        elements.append(_text(highlights_md))
+        elements.append(_hr())
+
+    # 主要客户
+    top_clients = stats.get("top_clients", [])
+    if top_clients:
+        clients_md = "👥 **主要客户**\n"
+        for c in top_clients[:3]:
+            clients_md += f"• {c['name']}（{c['count']} 封）\n"
+        elements.append(_text(clients_md))
+
+    elements.append(_note(f"MailPulse 周报 · {period}"))
+
+    color = "red" if pending > 3 or high > 5 else "blue"
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": _header(f"📊 {person_name} 周报 · {period}", color),
+        "elements": elements,
+    }

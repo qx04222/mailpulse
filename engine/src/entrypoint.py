@@ -15,6 +15,7 @@ from .bot.server import create_bot_app
 from .bot.lark_callback import create_callback_app
 from .bot.daily_todo import send_all_daily_todos
 from .bot.hourly_sync import hourly_sync
+from .bot.weekly_report import send_all_weekly_reports
 
 logging.basicConfig(
     level=logging.INFO,
@@ -226,6 +227,14 @@ async def main():
         CronTrigger(hour="10-17", minute=0, day_of_week="mon-sat", timezone="America/Toronto"),
         id="hourly_sync",
         name="Hourly Lightweight Sync",
+    )
+
+    # 个人周报：每周六 9:30 AM
+    scheduler.add_job(
+        send_all_weekly_reports,
+        CronTrigger(hour=9, minute=30, day_of_week="sat", timezone="America/Toronto"),
+        id="weekly_report",
+        name="Weekly Report Push",
     )
 
     scheduler.start()
