@@ -126,6 +126,12 @@ async def _handle_lark_message_async(data: P2ImMessageReceiveV1) -> None:
     chat_history = chat_contexts.get(context_key)
 
     try:
+        # Send "thinking" indicator immediately
+        if chat_type == "p2p":
+            send_user_message(open_id, "正在查询，请稍候...")
+        else:
+            send_text_message(chat_id, "正在查询，请稍候...")
+
         answer = await process_query(
             question=text,
             chat_context=chat_history,
