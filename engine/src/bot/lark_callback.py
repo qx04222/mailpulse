@@ -478,13 +478,12 @@ async def _broadcast_file(request: web.Request) -> web.Response:
         filename = field.filename or "document.pdf"
         file_bytes = await field.read()
 
-        # Upload file once
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        type_map = {"pdf": "pdf", "doc": "doc", "docx": "doc"}
-        file_type = type_map.get(ext, "stream")
-        file_key = upload_file(file_bytes, filename, file_type=file_type)
+        # Upload file once (always use "stream" type for reliability)
+        logger.info(f"[Broadcast] Uploading {filename} ({len(file_bytes)} bytes)")
+        file_key = upload_file(file_bytes, filename, file_type="stream")
         if not file_key:
-            return web.json_response({"error": "file upload failed"}, status=500)
+            return web.json_response({"error": "file upload failed, check Lark im:resource permission"}, status=500)
+        logger.info(f"[Broadcast] Upload OK: {file_key}")
 
         # Send to all active people with lark_user_id
         people = load_people()
@@ -494,9 +493,15 @@ async def _broadcast_file(request: web.Request) -> web.Response:
             open_id = person.get("lark_user_id")
             if not open_id or not person.get("is_active", True):
                 continue
-            # Send intro message first
-            send_user_message(open_id,
-                f"Hi {person.get('name', '')}，这是 MailPulse Bot 功能使用指南，请查收：")
+            # Send welcome + intro message
+            welcome = (
+                f"Hi {person.get('name', '')}，\n\n"
+                f"欢迎使用 MailPulse AI 邮件助手！\n\n"
+                f"从现在开始，我会帮你自动监控公司邮件、分析优先级、推送待办提醒。"
+                f"你可以直接向我提问，比如「最近有什么需要处理的？」\n\n"
+                f"附件是完整的功能使用指南，2 分钟即可了解所有功能。"
+            )
+            send_user_message(open_id, welcome)
             # Send file
             ok = send_user_file(open_id, file_key)
             if ok:
