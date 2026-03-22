@@ -3,12 +3,17 @@ Escalation safety net.
 Checks for DMs sent but not acknowledged within the threshold,
 and escalates them to the group chat.
 """
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List
 
 from ..storage.db import db
 from ..destinations import lark as lark_client
 from ..destinations.lark_cards import build_escalation_card
+
+logger = logging.getLogger(__name__)
+
+MAX_ESCALATIONS_PER_RUN = 5  # Avoid flooding the group
 
 
 def check_unacknowledged_dms(
@@ -19,7 +24,7 @@ def check_unacknowledged_dms(
 ) -> int:
     """
     Check for DMs sent > threshold hours ago that haven't been acknowledged.
-    Escalates them to the group chat.
+    Escalates them to the group chat (oldest first, max 5 per run).
     Returns number of items escalated.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours_threshold)).isoformat()
@@ -32,11 +37,12 @@ def check_unacknowledged_dms(
             .eq("escalated_to_group", False) \
             .not_.is_("dm_sent_at", "null") \
             .lt("dm_sent_at", cutoff) \
-            .in_("priority", ["high", "medium"]) \
             .in_("status", ["pending", "in_progress", "overdue"]) \
+            .order("dm_sent_at") \
+            .limit(MAX_ESCALATIONS_PER_RUN) \
             .execute()
     except Exception as e:
-        print(f"[Escalation] Query error: {e}")
+        logger.error(f"[Escalation] Query error: {e}")
         return 0
 
     items = resp.data or []
@@ -80,8 +86,8 @@ def check_unacknowledged_dms(
                 escalated += 1
 
         except Exception as e:
-            print(f"[Escalation] Error escalating {item.get('id')}: {e}")
+            logger.error(f"[Escalation] Error escalating {item.get('id')}: {e}")
 
     if escalated:
-        print(f"[Escalation] {company_name}: {escalated} items escalated to group")
+        logger.info(f"[Escalation] {company_name}: {escalated} items escalated to group")
     return escalated

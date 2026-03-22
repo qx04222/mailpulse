@@ -18,11 +18,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any
 from collections import defaultdict
 
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 from ..config import settings
 from ..storage.db import db
 
-client = Anthropic(api_key=settings.anthropic_api_key)
+client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 BATCH_SIZE = 15  # 每批最多线程数
 HAIKU_BATCH = 5  # Haiku 并发批大小
@@ -143,7 +143,7 @@ async def summarize_thread(thread: Dict) -> str:
     )
 
     try:
-        resp = client.messages.create(
+        resp = await client.messages.create(
             model="claude-haiku-4-5",
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
@@ -237,7 +237,7 @@ async def generate_group_report(
         threads_text=threads_text,
     )
 
-    resp = client.messages.create(
+    resp = await client.messages.create(
         model="claude-sonnet-4-5",
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
