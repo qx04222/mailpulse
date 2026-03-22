@@ -22,6 +22,9 @@ TOPIC_TITLES = {
     "report": "📊 每日/每周报告",
     "urgent": "🔴 紧急待处理",
     "alert": "⚠️ 系统告警",
+    "general": "💬 日常沟通",
+    "clients": "👥 客户动态",
+    "internal": "📋 内部协作",
 }
 
 
@@ -140,3 +143,19 @@ def send_file_to_topic(
 
     # Fallback
     return lark_client.send_file_message(chat_id, file_key)
+
+
+def init_all_topics(company_id: str, chat_id: str) -> Dict[str, str]:
+    """
+    Create all topics for a company's group chat at once.
+    Returns {topic_key: message_id} for all created topics.
+    """
+    results = {}
+    for key in TOPIC_TITLES:
+        msg_id = ensure_topic(company_id, chat_id, key)
+        if msg_id:
+            results[key] = msg_id
+            logger.info(f"[Topics] Initialized '{key}' → {msg_id}")
+        else:
+            logger.warning(f"[Topics] Failed to initialize '{key}'")
+    return results

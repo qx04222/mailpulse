@@ -443,11 +443,29 @@ async def _send_test_card(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def _init_topics(request: web.Request) -> web.Response:
+    """Initialize all topics for all active companies."""
+    from ..config import load_companies
+    from ..destinations.lark_topics import init_all_topics
+
+    results = {}
+    companies = load_companies()
+    for company in companies:
+        chat_id = company.get("lark_group_id")
+        if not chat_id:
+            continue
+        topics = init_all_topics(company["id"], chat_id)
+        results[company["name"]] = topics
+
+    return web.json_response({"ok": True, "topics": results})
+
+
 def create_callback_app() -> web.Application:
     import os
     app = web.Application()
     app.router.add_post("/lark/callback", handle_lark_callback)
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
+    app.router.add_get("/init-topics", _init_topics)
     if os.environ.get("ENABLE_TEST_ENDPOINTS"):
         app.router.add_get("/test-card", _send_test_card)
     return app
