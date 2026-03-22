@@ -212,3 +212,32 @@ def sync_followups_to_calendar(
 
     print(f"[Lark Calendar] Sync done: {created} events created")
     return created
+
+
+def delete_calendar_event(calendar_id: str, event_id: str) -> bool:
+    """Delete a calendar event. Used when action_item is resolved."""
+    try:
+        _api_call(
+            "DELETE",
+            f"/open-apis/calendar/v4/calendars/{calendar_id}/events/{event_id}",
+        )
+        print(f"[Lark Calendar] Event deleted: {event_id}")
+        return True
+    except Exception as e:
+        print(f"[Lark Calendar] Error deleting event {event_id}: {e}")
+        return False
+
+
+def update_calendar_event(calendar_id: str, event_id: str, updates: dict) -> bool:
+    """Update an existing event (e.g., mark title as completed)."""
+    try:
+        _api_call(
+            "PATCH",
+            f"/open-apis/calendar/v4/calendars/{calendar_id}/events/{event_id}",
+            json_data=updates,
+        )
+        print(f"[Lark Calendar] Event updated: {event_id}")
+        return True
+    except Exception as e:
+        print(f"[Lark Calendar] Error updating event {event_id}: {e}")
+        return False

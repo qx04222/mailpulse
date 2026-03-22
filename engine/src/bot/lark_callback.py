@@ -20,6 +20,7 @@ from ..config import settings
 from ..storage.db import db
 from ..storage.action_items import mark_resolved
 from .lark_message import handle_lark_message
+from .ingest import handle_ingest
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,22 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
             }).eq("id", item_id).execute()
         except Exception as e:
             logger.warning(f"[Lark Card] DB error (handled): {e}")
+
+        # Auto-clean linked calendar event (fire-and-forget in background thread)
+        try:
+            import asyncio
+            import threading
+            from ..processors.calendar_sync import mark_calendar_event_done
+
+            def _cleanup():
+                try:
+                    asyncio.run(mark_calendar_event_done(item_id))
+                except Exception as ex:
+                    logger.warning(f"[Lark Card] Calendar cleanup error: {ex}")
+
+            threading.Thread(target=_cleanup, daemon=True).start()
+        except Exception as e:
+            logger.warning(f"[Lark Card] Calendar cleanup dispatch error: {e}")
 
         logger.info(f"[Lark Card] Item {item_id} handled by {user_name}")
         card = _status_card(
@@ -583,6 +600,7 @@ def create_callback_app() -> web.Application:
     import os
     app = web.Application()
     app.router.add_post("/lark/callback", handle_lark_callback)
+    app.router.add_post("/ingest", handle_ingest)
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
     app.router.add_get("/init-topics", _init_topics)
     app.router.add_post("/broadcast-file", _broadcast_file)

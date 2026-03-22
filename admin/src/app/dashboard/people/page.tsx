@@ -1,7 +1,28 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Download, Search, RefreshCw } from "lucide-react";
+import {
+  Download,
+  Search,
+  RefreshCw,
+  X,
+  Plus,
+  ChevronRight,
+  ShieldCheck,
+} from "lucide-react";
+
+/* ────────────────────────────── Types ────────────────────────────── */
+
+interface PersonIdentity {
+  id: string;
+  person_id: string;
+  provider: string;
+  external_id: string;
+  display_name: string | null;
+  metadata: Record<string, unknown>;
+  is_verified: boolean;
+  created_at: string;
+}
 
 interface Person {
   id: string;
@@ -19,7 +40,82 @@ interface Person {
   lark_employee_no: string | null;
   lark_synced_at: string | null;
   companies: { id: string; name: string }[];
+  identities: PersonIdentity[];
 }
+
+/* ────────────────────────────── Provider config ────────────────────────────── */
+
+const PROVIDER_CONFIG: Record<
+  string,
+  { label: string; bg: string; text: string; dot: string }
+> = {
+  gmail: {
+    label: "Gmail",
+    bg: "bg-red-100/80",
+    text: "text-red-700",
+    dot: "bg-red-500",
+  },
+  lark: {
+    label: "Lark",
+    bg: "bg-blue-100/80",
+    text: "text-blue-700",
+    dot: "bg-blue-500",
+  },
+  zoho: {
+    label: "Zoho",
+    bg: "bg-purple-100/80",
+    text: "text-purple-700",
+    dot: "bg-purple-500",
+  },
+  arcview_saas: {
+    label: "Arcview SaaS",
+    bg: "bg-emerald-100/80",
+    text: "text-emerald-700",
+    dot: "bg-emerald-500",
+  },
+  arcnexus_saas: {
+    label: "ArcNexus SaaS",
+    bg: "bg-amber-100/80",
+    text: "text-amber-700",
+    dot: "bg-amber-500",
+  },
+  torquemax_saas: {
+    label: "TorqueMax SaaS",
+    bg: "bg-orange-100/80",
+    text: "text-orange-700",
+    dot: "bg-orange-500",
+  },
+  telegram: {
+    label: "Telegram",
+    bg: "bg-sky-100/80",
+    text: "text-sky-700",
+    dot: "bg-sky-500",
+  },
+};
+
+function getProviderStyle(provider: string) {
+  return (
+    PROVIDER_CONFIG[provider] ?? {
+      label: provider,
+      bg: "bg-slate-100",
+      text: "text-slate-600",
+      dot: "bg-slate-400",
+    }
+  );
+}
+
+const PROVIDER_OPTIONS = [
+  "gmail",
+  "lark",
+  "zoho",
+  "arcview_saas",
+  "arcnexus_saas",
+  "torquemax_saas",
+  "telegram",
+  "other",
+];
+
+/* ────────────────────────────── Small components ────────────────────────────── */
 
 function StatusDot({ active }: { active: boolean }) {
   return (
@@ -77,6 +173,390 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
+function ProviderBadge({
+  provider,
+  compact,
+}: {
+  provider: string;
+  compact?: boolean;
+}) {
+  const style = getProviderStyle(provider);
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full font-bold tracking-wide uppercase ${
+        style.bg
+      } ${style.text} ${
+        compact
+          ? "px-2 py-0.5 text-[10px]"
+          : "px-2.5 py-0.5 text-[11px]"
+      }`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+      {style.label}
+    </span>
+  );
+}
+
+/* ────────────────────────────── Identity Row ────────────────────────────── */
+
+function IdentityRow({
+  identity,
+  onDelete,
+  deleting,
+}: {
+  identity: PersonIdentity;
+  onDelete: (id: string) => void;
+  deleting: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 rounded-xl bg-surface-low group hover:bg-slate-50 transition-colors">
+      <ProviderBadge provider={identity.provider} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-on-surface truncate">
+          {identity.external_id}
+        </p>
+        {identity.display_name && (
+          <p className="text-[11px] text-muted/60 truncate">
+            {identity.display_name}
+          </p>
+        )}
+      </div>
+      {identity.is_verified && (
+        <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+      )}
+      <button
+        onClick={() => onDelete(identity.id)}
+        disabled={deleting}
+        className="rounded-lg p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+        title="Remove identity"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/* ────────────────────────────── Add Identity Form ────────────────────────────── */
+
+function AddIdentityForm({
+  personId,
+  onSaved,
+  onCancel,
+}: {
+  personId: string;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [provider, setProvider] = useState("gmail");
+  const [externalId, setExternalId] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!externalId.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/people/${personId}/identities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          external_id: externalId.trim(),
+          display_name: displayName.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to add identity");
+      }
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mt-3 p-3 rounded-xl bg-surface-low border border-dashed border-slate-200 space-y-3"
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[11px] font-bold uppercase tracking-widest text-muted/60 mb-1">
+            Provider
+          </label>
+          <select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+            className="w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-container/20 outline-none"
+          >
+            {PROVIDER_OPTIONS.map((p) => (
+              <option key={p} value={p}>
+                {getProviderStyle(p).label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] font-bold uppercase tracking-widest text-muted/60 mb-1">
+            External ID
+          </label>
+          <input
+            type="text"
+            value={externalId}
+            onChange={(e) => setExternalId(e.target.value)}
+            placeholder="email@example.com"
+            className="w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-container/20 outline-none placeholder:text-slate-400"
+            required
+          />
+        </div>
+      </div>
+      <div>
+        <label className="block text-[11px] font-bold uppercase tracking-widest text-muted/60 mb-1">
+          Display Name (optional)
+        </label>
+        <input
+          type="text"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="Alternative display name"
+          className="w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-container/20 outline-none placeholder:text-slate-400"
+        />
+      </div>
+      {error && (
+        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:bg-slate-100 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={saving || !externalId.trim()}
+          className="px-4 py-1.5 rounded-lg bg-primary text-on-primary text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ────────────────────────────── Person Detail Panel (Slide-over) ────────────────────────────── */
+
+function PersonDetailPanel({
+  person,
+  onClose,
+  onIdentityChanged,
+}: {
+  person: Person;
+  onClose: () => void;
+  onIdentityChanged: () => void;
+}) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDeleteIdentity(identityId: string) {
+    setDeletingId(identityId);
+    try {
+      const res = await fetch(
+        `/api/people/${person.id}/identities?identity_id=${identityId}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to remove identity");
+      }
+      onIdentityChanged();
+    } catch {
+      alert("Failed to remove identity");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  const identities = person.identities ?? [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div className="relative w-full max-w-lg bg-white shadow-2xl overflow-y-auto animate-in slide-in-from-right">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-on-surface">Person Details</h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-muted hover:bg-surface-low hover:text-on-surface transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-6 space-y-8">
+          {/* Section 1: Person Info */}
+          <div>
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted/60 mb-4">
+              Person Info
+            </h3>
+            <div className="flex items-start gap-4">
+              {person.avatar_url ? (
+                <img
+                  src={person.avatar_url}
+                  alt={person.name}
+                  className="w-14 h-14 rounded-2xl bg-slate-100 border-2 border-white shadow-md object-cover shrink-0"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-2xl bg-primary-container/10 border-2 border-white shadow-md flex items-center justify-center text-lg font-bold text-primary-container shrink-0">
+                  {person.name.charAt(0)}
+                </div>
+              )}
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <p className="text-xl font-bold text-on-surface leading-tight">
+                  {person.name}
+                </p>
+                {person.email && (
+                  <p className="text-sm text-muted truncate">{person.email}</p>
+                )}
+                {person.lark_job_title && (
+                  <p className="text-xs text-muted/60">
+                    {person.lark_job_title}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <TypeBadge type={person.person_type} />
+              <RoleBadge role={person.role} />
+              <StatusDot active={person.is_active} />
+            </div>
+
+            {person.lark_departments?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {person.lark_departments.map((dept, i) => (
+                  <span
+                    key={i}
+                    className="px-2.5 py-0.5 rounded-full bg-blue-50 text-[11px] font-medium text-blue-700"
+                  >
+                    {dept}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {person.lark_user_id && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-muted/60">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[11px]">
+                  Lark Connected
+                </span>
+                {person.lark_employee_no && (
+                  <span>No. {person.lark_employee_no}</span>
+                )}
+                {person.lark_mobile && <span>{person.lark_mobile}</span>}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Connected Identities */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted/60">
+                Connected Identities
+              </h3>
+              <span className="text-xs text-muted font-medium">
+                {identities.length} connected
+              </span>
+            </div>
+
+            {identities.length === 0 && !showAddForm ? (
+              <div className="py-6 text-center text-sm text-muted/50 bg-surface-low rounded-xl">
+                No identities connected yet
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {identities.map((identity) => (
+                  <IdentityRow
+                    key={identity.id}
+                    identity={identity}
+                    onDelete={handleDeleteIdentity}
+                    deleting={deletingId === identity.id}
+                  />
+                ))}
+              </div>
+            )}
+
+            {showAddForm ? (
+              <AddIdentityForm
+                personId={person.id}
+                onSaved={() => {
+                  setShowAddForm(false);
+                  onIdentityChanged();
+                }}
+                onCancel={() => setShowAddForm(false)}
+              />
+            ) : (
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-slate-200 text-sm font-medium text-muted hover:bg-surface-low hover:border-primary-container/30 hover:text-primary-container transition-all"
+              >
+                <Plus className="h-4 w-4" />
+                Add Identity
+              </button>
+            )}
+          </div>
+
+          {/* Section 3: Companies */}
+          <div>
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-muted/60 mb-3">
+              Companies
+            </h3>
+            {person.companies?.length > 0 ? (
+              <div className="space-y-2">
+                {person.companies.map((company) => (
+                  <div
+                    key={company.id}
+                    className="flex items-center gap-3 py-2.5 px-3 rounded-xl bg-surface-low"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-primary-container/10 flex items-center justify-center text-xs font-bold text-primary-container">
+                      {company.name.charAt(0)}
+                    </div>
+                    <span className="text-sm font-medium text-on-surface">
+                      {company.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-6 text-center text-sm text-muted/50 bg-surface-low rounded-xl">
+                Not associated with any company
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────── Main Page ────────────────────────────── */
+
 export default function PeoplePage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,20 +565,37 @@ export default function PeoplePage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/people");
-      if (!res.ok) throw new Error((await res.json()).error || "Failed to fetch");
+      if (!res.ok)
+        throw new Error((await res.json()).error || "Failed to fetch");
       const data = await res.json();
-      setPeople(Array.isArray(data) ? data : []);
+      const list: Person[] = (Array.isArray(data) ? data : []).map(
+        (p: Person) => ({
+          ...p,
+          identities: p.identities ?? [],
+          companies: p.companies ?? [],
+        })
+      );
+      setPeople(list);
+
+      // Keep selected person in sync after refetch
+      if (selectedPerson) {
+        const updated = list.find((p) => p.id === selectedPerson.id);
+        if (updated) setSelectedPerson(updated);
+        else setSelectedPerson(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -125,6 +622,10 @@ export default function PeoplePage() {
     }
   }
 
+  function handleIdentityChanged() {
+    fetchData();
+  }
+
   const filtered = people.filter((p) => {
     if (filterType === "employee" && p.person_type !== "employee") return false;
     if (filterType === "shared_mailbox" && p.person_type !== "shared_mailbox")
@@ -137,7 +638,12 @@ export default function PeoplePage() {
       p.email?.toLowerCase().includes(q) ||
       p.lark_job_title?.toLowerCase().includes(q) ||
       p.lark_departments?.some((d) => d.toLowerCase().includes(q)) ||
-      p.companies?.some((c) => c.name.toLowerCase().includes(q))
+      p.companies?.some((c) => c.name.toLowerCase().includes(q)) ||
+      p.identities?.some(
+        (id) =>
+          id.external_id.toLowerCase().includes(q) ||
+          id.provider.toLowerCase().includes(q)
+      )
     );
   });
 
@@ -158,8 +664,8 @@ export default function PeoplePage() {
             Directory
           </h1>
           <p className="text-muted mt-2 max-w-xl text-sm md:text-base">
-            Manage your organization&apos;s members, roles, and Lark
-            integration from a centralized viewpoint.
+            Manage your organization&apos;s members, roles, and connected
+            identities from a centralized viewpoint.
           </p>
         </div>
         <button
@@ -248,7 +754,7 @@ export default function PeoplePage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search members, roles or departments..."
+            placeholder="Search members, identities or departments..."
             className="w-full bg-surface-low border-none rounded-xl py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary-container/20 transition-all outline-none placeholder:text-slate-400"
           />
         </div>
@@ -284,7 +790,7 @@ export default function PeoplePage() {
                     Name
                   </th>
                   <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
-                    Email
+                    Identities
                   </th>
                   <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
                     Type
@@ -298,9 +804,7 @@ export default function PeoplePage() {
                   <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
                     Status
                   </th>
-                  <th className="px-6 lg:px-8 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10">
-                    Lark
-                  </th>
+                  <th className="px-4 py-4 text-[11px] font-bold uppercase tracking-widest text-muted/70 border-b border-outline-dim/10 w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -317,7 +821,8 @@ export default function PeoplePage() {
                   filtered.map((person) => (
                     <tr
                       key={person.id}
-                      className="group hover:bg-surface-low transition-colors duration-200"
+                      onClick={() => setSelectedPerson(person)}
+                      className="group hover:bg-surface-low transition-colors duration-200 cursor-pointer"
                     >
                       <td className="px-6 lg:px-8 py-4">
                         <div className="flex items-center gap-3">
@@ -345,9 +850,21 @@ export default function PeoplePage() {
                         </div>
                       </td>
                       <td className="px-6 lg:px-8 py-4">
-                        <span className="text-sm text-muted font-medium">
-                          {person.email || "\u2014"}
-                        </span>
+                        {person.identities.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {person.identities.map((id) => (
+                              <ProviderBadge
+                                key={id.id}
+                                provider={id.provider}
+                                compact
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted/40 text-xs">
+                            {"\u2014"}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 lg:px-8 py-4">
                         <TypeBadge type={person.person_type} />
@@ -374,16 +891,8 @@ export default function PeoplePage() {
                       <td className="px-6 lg:px-8 py-4">
                         <StatusDot active={person.is_active} />
                       </td>
-                      <td className="px-6 lg:px-8 py-4">
-                        {person.lark_user_id ? (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[11px] font-bold text-emerald-700">
-                            Connected
-                          </span>
-                        ) : (
-                          <span className="text-muted/40 text-xs">
-                            {"\u2014"}
-                          </span>
-                        )}
+                      <td className="px-4 py-4">
+                        <ChevronRight className="h-4 w-4 text-muted/30 group-hover:text-muted/60 transition-colors" />
                       </td>
                     </tr>
                   ))
@@ -400,7 +909,11 @@ export default function PeoplePage() {
               </div>
             ) : (
               filtered.map((person) => (
-                <div key={person.id} className="px-4 py-4 space-y-2.5">
+                <div
+                  key={person.id}
+                  onClick={() => setSelectedPerson(person)}
+                  className="px-4 py-4 space-y-2.5 cursor-pointer active:bg-surface-low transition-colors"
+                >
                   <div className="flex items-center gap-3">
                     {person.avatar_url ? (
                       <img
@@ -424,15 +937,19 @@ export default function PeoplePage() {
                         {person.email || "\u2014"}
                       </p>
                     </div>
+                    <ChevronRight className="h-4 w-4 text-muted/30 shrink-0" />
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 pl-[52px]">
                     <TypeBadge type={person.person_type} />
                     <RoleBadge role={person.role} />
-                    {person.lark_user_id && (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[11px] font-bold text-emerald-700">
-                        Lark
-                      </span>
-                    )}
+                    {person.identities.length > 0 &&
+                      person.identities.map((id) => (
+                        <ProviderBadge
+                          key={id.id}
+                          provider={id.provider}
+                          compact
+                        />
+                      ))}
                   </div>
                   {person.lark_departments?.length > 0 && (
                     <div className="flex flex-wrap gap-1 pl-[52px]">
@@ -458,6 +975,15 @@ export default function PeoplePage() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Person Detail Slide-over */}
+      {selectedPerson && (
+        <PersonDetailPanel
+          person={selectedPerson}
+          onClose={() => setSelectedPerson(null)}
+          onIdentityChanged={handleIdentityChanged}
+        />
       )}
     </div>
   );

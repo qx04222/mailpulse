@@ -16,6 +16,7 @@ from .bot.lark_callback import create_callback_app
 from .bot.daily_todo import send_all_daily_todos
 from .bot.hourly_sync import hourly_sync
 from .bot.weekly_report import send_all_weekly_reports
+from .processors.calendar_sync import check_due_calendar_events
 
 logging.basicConfig(
     level=logging.INFO,
@@ -227,6 +228,14 @@ async def main():
         CronTrigger(hour="10-17", minute=0, day_of_week="mon-sat", timezone="America/Toronto"),
         id="hourly_sync",
         name="Hourly Lightweight Sync",
+    )
+
+    # 日历到期提醒：每天 8:30 AM
+    scheduler.add_job(
+        check_due_calendar_events,
+        CronTrigger(hour=8, minute=30, day_of_week="mon-sat", timezone="America/Toronto"),
+        id="calendar_due_check",
+        name="Calendar Due Date Reminder",
     )
 
     # 个人周报：每周六 9:30 AM

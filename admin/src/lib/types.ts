@@ -1,3 +1,14 @@
+export interface PersonIdentity {
+  id: string;
+  person_id: string;
+  provider: string;
+  external_id: string;
+  display_name: string | null;
+  metadata: Record<string, unknown>;
+  is_verified: boolean;
+  created_at: string;
+}
+
 export interface Person {
   id: string;
   name: string;
@@ -9,6 +20,7 @@ export interface Person {
   created_at: string;
   updated_at: string;
   companies?: Company[];
+  identities?: PersonIdentity[];
 }
 
 export interface Company {
