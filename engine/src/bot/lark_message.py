@@ -10,51 +10,14 @@ from typing import Optional
 
 from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
 
-from ..config import settings, load_companies, load_people
-from ..storage.db import db
+from ..config import settings
 from ..destinations.lark import send_text_message, send_user_message
 
+from .helpers import get_person_by_open_id, get_person_companies, is_feature_enabled
 from .lark_chat_context import chat_contexts
 from .query import process_query
 
 logger = logging.getLogger(__name__)
-
-
-def _get_person_by_open_id(open_id: str) -> Optional[dict]:
-    """Look up a person by their Lark open_id."""
-    people = load_people()
-    for p in people:
-        if p.get("lark_user_id") == open_id:
-            return p
-    return None
-
-
-def _get_companies_for_person(person_id: str) -> list:
-    """Get all company_ids a person belongs to."""
-    companies = load_companies()
-    result = []
-    for c in companies:
-        for m in c.get("members", []):
-            if m.get("id") == person_id:
-                result.append(c)
-                break
-    return result
-
-
-def _is_feature_enabled(company_id: str, feature_key: str) -> bool:
-    """Check if a feature is enabled for a company."""
-    try:
-        resp = db.table("company_features") \
-            .select("is_enabled") \
-            .eq("company_id", company_id) \
-            .eq("feature_key", feature_key) \
-            .limit(1) \
-            .execute()
-        if resp.data:
-            return resp.data[0].get("is_enabled", False)
-    except Exception:
-        pass
-    return True  # default on if no record
 
 
 def _extract_text(content_str: str) -> str:
@@ -132,7 +95,7 @@ async def _handle_lark_message_async(data: P2ImMessageReceiveV1) -> None:
         return
 
     # Look up the person
-    person = _get_person_by_open_id(open_id)
+    person = get_person_by_open_id(open_id)
     if not person:
         logger.warning(f"[Lark Q&A] Unknown user {open_id}, ignoring")
         reply = "抱歉，你还没有在系统中注册。请联系管理员添加你的飞书 ID。"
@@ -143,7 +106,7 @@ async def _handle_lark_message_async(data: P2ImMessageReceiveV1) -> None:
         return
 
     # Check feature gate
-    companies = _get_companies_for_person(person["id"])
+    companies = get_person_companies(person["id"])
     if not companies:
         reply = "你目前没有关联任何公司，无法查询邮件数据。"
         if chat_type == "p2p":
@@ -152,7 +115,7 @@ async def _handle_lark_message_async(data: P2ImMessageReceiveV1) -> None:
             send_text_message(chat_id, reply)
         return
 
-    qa_enabled = any(_is_feature_enabled(c["id"], "lark_qa") for c in companies)
+    qa_enabled = any(is_feature_enabled(c["id"], "lark_qa") for c in companies)
     if not qa_enabled:
         return
 
@@ -166,6 +129,7 @@ async def _handle_lark_message_async(data: P2ImMessageReceiveV1) -> None:
         answer = await process_query(
             question=text,
             chat_context=chat_history,
+            company_ids=[c["id"] for c in companies],
         )
 
         # Save to context
@@ -182,7 +146,7 @@ async def _handle_lark_message_async(data: P2ImMessageReceiveV1) -> None:
 
     except Exception as e:
         logger.error(f"[Lark Q&A] Error: {e}")
-        error_msg = f"处理出错，请稍后再试: {str(e)[:100]}"
+        error_msg = "处理出错，请稍后再试"
         if chat_type == "p2p":
             send_user_message(open_id, error_msg)
         else:

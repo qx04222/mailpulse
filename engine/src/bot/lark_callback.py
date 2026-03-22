@@ -67,7 +67,8 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
     elif action_type == "snooze":
         try:
             db.table("action_items").update({
-                "dm_sent_at": datetime.now(timezone.utc).isoformat(),
+                "status": "in_progress",
+                "dm_sent_at": None,
             }).eq("id", item_id).execute()
         except Exception as e:
             logger.warning(f"[Lark Card] DB error (snooze): {e}")
@@ -76,7 +77,7 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
         card = _status_card(
             info["title"] or item_id,
             "⏰ 稍后处理",
-            f"⏰ **{user_name}** 稍后处理 · 24h 后再提醒",
+            f"⏰ **{user_name}** 稍后处理 · 下次推送时再提醒",
             "yellow", info, item_id=item_id,
         )
 
@@ -392,8 +393,10 @@ async def _send_test_card(request: web.Request) -> web.Response:
 
 
 def create_callback_app() -> web.Application:
+    import os
     app = web.Application()
     app.router.add_post("/lark/callback", handle_lark_callback)
     app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
-    app.router.add_get("/test-card", _send_test_card)
+    if os.environ.get("ENABLE_TEST_ENDPOINTS"):
+        app.router.add_get("/test-card", _send_test_card)
     return app

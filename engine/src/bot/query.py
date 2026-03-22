@@ -6,12 +6,12 @@ import json
 import re
 from typing import Optional, Dict, Any, List
 
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 from ..config import settings, load_companies
 from ..storage.emails import get_emails_by_company
 from ..storage.action_items import get_pending_items
 
-client = Anthropic(api_key=settings.anthropic_api_key)
+client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
 def find_company(name: str) -> Optional[Dict[str, Any]]:
@@ -72,7 +72,7 @@ async def extract_intent(question: str) -> dict:
         for c in companies
         for m in c.get("members", [])
     )
-    resp = client.messages.create(
+    resp = await client.messages.create(
         model="claude-haiku-4-5",
         max_tokens=100,
         messages=[{"role": "user", "content": INTENT_PROMPT.format(
@@ -149,7 +149,11 @@ def _filter_rows(
     return result
 
 
-async def process_query(question: str, chat_context: Optional[List] = None) -> str:
+async def process_query(
+    question: str,
+    chat_context: Optional[List] = None,
+    company_ids: Optional[List[str]] = None,
+) -> str:
     """
     Process user query: extract intent -> query Supabase -> AI answer.
     """
@@ -160,9 +164,16 @@ async def process_query(question: str, chat_context: Optional[List] = None) -> s
     topic = intent.get("topic")
     days = min(intent.get("days", 7), 30)
 
-    # Step 2: Query from Supabase
+    # Step 2: Query from Supabase (scoped to company_ids if provided)
     company = find_company(company_name) if company_name else None
     companies = load_companies()
+
+    # Filter companies to only those the user has access to
+    if company_ids is not None:
+        companies = [c for c in companies if c["id"] in company_ids]
+        # Also verify the matched company is in the allowed set
+        if company and company["id"] not in company_ids:
+            company = None
 
     if company:
         rows = get_emails_by_company(company["id"], days=days, limit=20)
@@ -206,7 +217,7 @@ async def process_query(question: str, chat_context: Optional[List] = None) -> s
             messages.append(ctx)
     messages.append({"role": "user", "content": prompt})
 
-    resp = client.messages.create(
+    resp = await client.messages.create(
         model="claude-sonnet-4-5",
         max_tokens=1500,
         messages=messages,

@@ -3,12 +3,15 @@ Lark (飞书国际版) API client.
 Handles: authentication, message sending, file upload, chat list.
 Uses tenant_access_token for bot-level access.
 """
+import logging
 import time
 from typing import Optional, Dict, Any, List
 
 import httpx
 
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 
 # Token cache
@@ -53,7 +56,7 @@ def _get_tenant_access_token() -> str:
     _token_cache["token"] = token
     _token_cache["expires_at"] = now + expire
 
-    print(f"[Lark] Token refreshed, expires in {expire}s")
+    logger.info(f"[Lark] Token refreshed, expires in {expire}s")
     return token
 
 
@@ -140,7 +143,7 @@ def send_user_message(user_id: str, text: str) -> bool:
         )
         return True
     except Exception as e:
-        print(f"[Lark] Error sending DM to {user_id}: {e}")
+        logger.error(f"[Lark] Error sending DM to {user_id}: {e}")
         return False
 
 
@@ -162,7 +165,7 @@ def send_text_message(chat_id: str, text: str) -> bool:
         )
         return True
     except Exception as e:
-        print(f"[Lark] Error sending text to {chat_id}: {e}")
+        logger.error(f"[Lark] Error sending text to {chat_id}: {e}")
         return False
 
 
@@ -184,7 +187,7 @@ def send_card_message(chat_id: str, card: Dict[str, Any]) -> Optional[str]:
         )
         return data.get("data", {}).get("message_id")
     except Exception as e:
-        print(f"[Lark] Error sending card to {chat_id}: {e}")
+        logger.error(f"[Lark] Error sending card to {chat_id}: {e}")
         return None
 
 
@@ -206,7 +209,7 @@ def send_user_card(user_id: str, card: Dict[str, Any]) -> Optional[str]:
         )
         return data.get("data", {}).get("message_id")
     except Exception as e:
-        print(f"[Lark] Error sending card DM to {user_id}: {e}")
+        logger.error(f"[Lark] Error sending card DM to {user_id}: {e}")
         return None
 
 
@@ -227,7 +230,7 @@ def update_card(message_id: str, card: Dict[str, Any]) -> bool:
         )
         return True
     except Exception as e:
-        print(f"[Lark] Error updating card {message_id}: {e}")
+        logger.error(f"[Lark] Error updating card {message_id}: {e}")
         return False
 
 
@@ -254,14 +257,14 @@ def upload_file(
         data = resp.json()
 
         if data.get("code") != 0:
-            print(f"[Lark] File upload error: {data.get('msg')}")
+            logger.error(f"[Lark] File upload error: {data.get('msg')}")
             return None
 
         file_key = data.get("data", {}).get("file_key")
-        print(f"[Lark] File uploaded: {filename} -> {file_key}")
+        logger.info(f"[Lark] File uploaded: {filename} -> {file_key}")
         return file_key
     except Exception as e:
-        print(f"[Lark] File upload error: {e}")
+        logger.error(f"[Lark] File upload error: {e}")
         return None
 
 
@@ -280,7 +283,7 @@ def send_file_message(chat_id: str, file_key: str) -> bool:
         )
         return True
     except Exception as e:
-        print(f"[Lark] Error sending file to {chat_id}: {e}")
+        logger.error(f"[Lark] Error sending file to {chat_id}: {e}")
         return False
 
 
@@ -302,11 +305,11 @@ def send_document(chat_id: str, file_bytes: bytes, filename: str) -> bool:
         "opus": "opus",
     }
     file_type = type_map.get(ext, "stream")
-    print(f"[Lark] Uploading {filename} ({len(file_bytes)} bytes, type={file_type})")
+    logger.info(f"[Lark] Uploading {filename} ({len(file_bytes)} bytes, type={file_type})")
 
     file_key = upload_file(file_bytes, filename, file_type=file_type)
     if not file_key:
-        print(f"[Lark] File upload failed for {filename}, cannot send document")
+        logger.error(f"[Lark] File upload failed for {filename}, cannot send document")
         return False
     return send_file_message(chat_id, file_key)
 
@@ -324,7 +327,7 @@ def get_chat_list() -> List[Dict[str, Any]]:
         data = _api_call("GET", "/open-apis/im/v1/chats", params={"page_size": 100})
         return data.get("data", {}).get("items", [])
     except Exception as e:
-        print(f"[Lark] Error getting chat list: {e}")
+        logger.error(f"[Lark] Error getting chat list: {e}")
         return []
 
 

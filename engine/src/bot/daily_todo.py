@@ -3,7 +3,7 @@ Daily todo card sender — pushes personal todo cards to each person via Lark DM
 Scheduled at 9:30 AM, only sends if the person has pending items.
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time as dt_time
 from typing import List, Dict, Any
 
 from ..config import load_companies, load_people
@@ -11,35 +11,9 @@ from ..storage.db import db
 from ..storage.action_items import get_pending_items
 from ..destinations.lark import send_user_card
 from ..destinations.lark_cards import build_daily_todo_card
+from .helpers import is_feature_enabled, get_person_companies
 
 logger = logging.getLogger(__name__)
-
-
-def _is_feature_enabled(company_id: str, feature_key: str) -> bool:
-    try:
-        resp = db.table("company_features") \
-            .select("is_enabled") \
-            .eq("company_id", company_id) \
-            .eq("feature_key", feature_key) \
-            .limit(1) \
-            .execute()
-        if resp.data:
-            return resp.data[0].get("is_enabled", False)
-    except Exception:
-        pass
-    return True
-
-
-def _get_person_companies(person_id: str) -> List[Dict]:
-    """Get companies this person belongs to."""
-    companies = load_companies()
-    result = []
-    for c in companies:
-        for m in c.get("members", []):
-            if m.get("id") == person_id:
-                result.append(c)
-                break
-    return result
 
 
 def _get_followup_reminders(person_id: str) -> List[Dict]:
@@ -70,17 +44,24 @@ async def send_daily_todo(person: Dict[str, Any]) -> bool:
         return False
 
     # Check quiet hours
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     quiet_start = person.get("quiet_hours_start")
     quiet_end = person.get("quiet_hours_end")
     if quiet_start and quiet_end:
+        # Parse string times (e.g. "22:00:00") to datetime.time if needed
+        if isinstance(quiet_start, str):
+            parts = quiet_start.split(":")
+            quiet_start = dt_time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
+        if isinstance(quiet_end, str):
+            parts = quiet_end.split(":")
+            quiet_end = dt_time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
         current_time = now.time()
         if quiet_start <= current_time <= quiet_end:
             return False
 
     # Check feature enabled for any of their companies
-    companies = _get_person_companies(person_id)
-    if not any(_is_feature_enabled(c["id"], "daily_todo") for c in companies):
+    companies = get_person_companies(person_id)
+    if not any(is_feature_enabled(c["id"], "daily_todo") for c in companies):
         return False
 
     # Gather action items across all companies
