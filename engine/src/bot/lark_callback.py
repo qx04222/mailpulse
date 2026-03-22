@@ -478,11 +478,29 @@ async def _broadcast_file(request: web.Request) -> web.Response:
         filename = field.filename or "document.pdf"
         file_bytes = await field.read()
 
-        # Upload file once (always use "stream" type for reliability)
+        # Upload file — try direct upload, capture Lark error
         logger.info(f"[Broadcast] Uploading {filename} ({len(file_bytes)} bytes)")
-        file_key = upload_file(file_bytes, filename, file_type="stream")
-        if not file_key:
-            return web.json_response({"error": "file upload failed, check Lark im:resource permission"}, status=500)
+
+        # Try upload with detailed error capture
+        import httpx
+        from ..destinations.lark import _get_tenant_access_token, _get_base_url
+        upload_url = f"{_get_base_url()}/open-apis/im/v1/files"
+        token = _get_tenant_access_token()
+        upload_resp = httpx.post(
+            upload_url,
+            headers={"Authorization": f"Bearer {token}"},
+            data={"file_type": "stream", "file_name": filename},
+            files={"file": (filename, file_bytes)},
+            timeout=60,
+        )
+        upload_data = upload_resp.json()
+        if upload_data.get("code") != 0:
+            return web.json_response({
+                "error": "file upload failed",
+                "lark_code": upload_data.get("code"),
+                "lark_msg": upload_data.get("msg"),
+            }, status=500)
+        file_key = upload_data.get("data", {}).get("file_key")
         logger.info(f"[Broadcast] Upload OK: {file_key}")
 
         # Send to all active people with lark_user_id

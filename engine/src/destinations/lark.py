@@ -334,7 +334,7 @@ def upload_file(
         data = resp.json()
 
         if data.get("code") != 0:
-            logger.error(f"[Lark] File upload error: {data.get('msg')}")
+            logger.error(f"[Lark] File upload error: code={data.get('code')} msg={data.get('msg')} full={data}")
             return None
 
         file_key = data.get("data", {}).get("file_key")
