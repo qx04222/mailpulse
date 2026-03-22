@@ -14,6 +14,7 @@ from .storage.db import db
 from .bot.server import create_bot_app
 from .bot.lark_callback import create_callback_app
 from .bot.daily_todo import send_all_daily_todos
+from .bot.hourly_sync import hourly_sync
 
 logging.basicConfig(
     level=logging.INFO,
@@ -217,6 +218,14 @@ async def main():
         CronTrigger(hour=9, minute=30, day_of_week="mon-sat", timezone="America/Toronto"),
         id="daily_todo",
         name="Daily Todo Push",
+    )
+
+    # 高频轻量 sync：周一到周六 10:00-17:00 每小时
+    scheduler.add_job(
+        hourly_sync,
+        CronTrigger(hour="10-17", minute=0, day_of_week="mon-sat", timezone="America/Toronto"),
+        id="hourly_sync",
+        name="Hourly Lightweight Sync",
     )
 
     scheduler.start()
