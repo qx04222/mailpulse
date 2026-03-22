@@ -43,8 +43,12 @@ async def send_daily_todo(person: Dict[str, Any]) -> bool:
     if not open_id:
         return False
 
-    # Check quiet hours
-    now = datetime.now(timezone.utc)
+    # Check quiet hours (quiet_hours are in America/Toronto local time)
+    try:
+        from zoneinfo import ZoneInfo
+        local_now = datetime.now(ZoneInfo("America/Toronto"))
+    except Exception:
+        local_now = datetime.now(timezone.utc)
     quiet_start = person.get("quiet_hours_start")
     quiet_end = person.get("quiet_hours_end")
     if quiet_start and quiet_end:
@@ -55,7 +59,7 @@ async def send_daily_todo(person: Dict[str, Any]) -> bool:
         if isinstance(quiet_end, str):
             parts = quiet_end.split(":")
             quiet_end = dt_time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0)
-        current_time = now.time()
+        current_time = local_now.time()
         if quiet_start <= current_time <= quiet_end:
             return False
 

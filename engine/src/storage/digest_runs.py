@@ -46,6 +46,7 @@ def complete_run(
         "high_priority": stats.get("high_priority", 0),
         "action_items_created": stats.get("action_items_created", 0),
         "telegram_delivered": stats.get("telegram_delivered", False),
+        "lark_delivered": stats.get("lark_delivered", False),
     }
     if stats.get("report_docx_url"):
         data["report_docx_url"] = stats["report_docx_url"]
