@@ -68,7 +68,6 @@ from .destinations.lark_cards import (
 )
 from .destinations.lark_base import sync_threads_to_base, create_thread_table
 from .destinations.lark_calendar import sync_followups_to_calendar
-from .destinations.lark_topics import send_to_topic, send_file_to_topic
 from .destinations.lark_calendar_acl import sync_calendar_acl
 from .processors.escalation import check_unacknowledged_dms
 
@@ -598,31 +597,11 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     group_reports=structured_data.get("group_reports", {}),
                     top_actions=structured_data.get("priority_actions", [])[:5],
                 )
-                # Send digest card to 📊 report topic
-                card_msg_id = send_to_topic(company_id, lark_group_id, "report", digest_card)
+                # Send digest card to group chat
+                card_msg_id = lark_client.send_card_message(lark_group_id, digest_card)
                 if card_msg_id:
-                    print(f"  -> Lark digest card sent (report topic)")
+                    print(f"  -> Lark digest card sent to group")
                     stats["lark_delivered"] = True
-
-                    # Send brief notification to main chat so members get pinged
-                    try:
-                        hp = stats["high_priority"]
-                        total = overview.get("total_emails", len(items))
-                        notify_card = {
-                            "config": {"wide_screen_mode": True},
-                            "header": {
-                                "title": {"tag": "plain_text", "content": f"📬 {company_name} 今日邮件摘要已更新"},
-                                "template": "blue",
-                            },
-                            "elements": [
-                                {"tag": "div", "text": {"tag": "lark_md", "content":
-                                    f"共 **{total}** 封邮件，**{hp}** 封高优先级\n"
-                                    f"详情请查看 **📊 每日/每周报告** 话题"}},
-                            ],
-                        }
-                        lark_client.send_card_message(lark_group_id, notify_card)
-                    except Exception:
-                        pass
 
                     # Track in lark_messages table
                     try:
@@ -692,18 +671,16 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                             {"card": thread_card, "action_item_id": action_item_id}
                         )
                     else:
-                        # Unassigned high-priority → send to 🔴 urgent topic
-                        send_to_topic(company_id, lark_group_id, "urgent", thread_card)
+                        # Unassigned high-priority → send to group chat
+                        lark_client.send_card_message(lark_group_id, thread_card)
 
-                # Send DOCX to 📊 report topic
+                # Send DOCX to group chat
                 if docx_bytes:
-                    doc_ok = send_file_to_topic(
-                        company_id, lark_group_id, "report",
-                        docx_bytes,
-                        filename=f"{company_name}_report_{date_range.replace('/', '-')}.docx",
-                    )
-                    if doc_ok:
-                        print(f"  -> Lark DOCX sent to report topic")
+                    file_key = lark_client.upload_file(docx_bytes, f"{company_name}_report_{date_range.replace('/', '-')}.docx")
+                    if file_key:
+                        doc_ok = lark_client.send_file_message(lark_group_id, file_key)
+                        if doc_ok:
+                            print(f"  -> Lark DOCX sent to group")
 
                 # Sync threads to Lark Base (多维表格)
                 lark_base_app_token = company.get("lark_base_app_token", "")
