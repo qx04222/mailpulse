@@ -604,6 +604,26 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     print(f"  -> Lark digest card sent (report topic)")
                     stats["lark_delivered"] = True
 
+                    # Send brief notification to main chat so members get pinged
+                    try:
+                        hp = stats["high_priority"]
+                        total = overview.get("total_emails", len(items))
+                        notify_card = {
+                            "config": {"wide_screen_mode": True},
+                            "header": {
+                                "title": {"tag": "plain_text", "content": f"📬 {company_name} 今日邮件摘要已更新"},
+                                "template": "blue",
+                            },
+                            "elements": [
+                                {"tag": "div", "text": {"tag": "lark_md", "content":
+                                    f"共 **{total}** 封邮件，**{hp}** 封高优先级\n"
+                                    f"详情请查看 **📊 每日/每周报告** 话题"}},
+                            ],
+                        }
+                        lark_client.send_card_message(lark_group_id, notify_card)
+                    except Exception:
+                        pass
+
                     # Track in lark_messages table
                     try:
                         from .storage.db import db as _lark_db
