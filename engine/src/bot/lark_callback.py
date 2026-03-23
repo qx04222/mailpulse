@@ -611,6 +611,33 @@ async def _introduce(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, **result})
 
 
+async def _cleanup_topics(request: web.Request) -> web.Response:
+    """Delete all topic root messages from Lark and clear lark_topics table."""
+    from ..destinations.lark import _api_call
+    try:
+        resp = db.table("lark_topics").select("message_id, topic_key, company_id").execute()
+        topics = resp.data or []
+        deleted = 0
+        failed = 0
+        for t in topics:
+            msg_id = t["message_id"]
+            try:
+                _api_call("DELETE", f"/open-apis/im/v1/messages/{msg_id}")
+                deleted += 1
+            except Exception as e:
+                logger.warning(f"[Cleanup] Failed to delete {msg_id}: {e}")
+                failed += 1
+
+        # Clear the table
+        db.table("lark_topics").delete().neq("topic_key", "__never__").execute()
+
+        logger.info(f"[Cleanup] Deleted {deleted} topic messages, {failed} failed, DB cleared")
+        return web.json_response({"ok": True, "deleted": deleted, "failed": failed})
+    except Exception as e:
+        logger.error(f"[Cleanup] Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 async def _list_chats(request: web.Request) -> web.Response:
     """List all group chats the bot is a member of."""
     from ..destinations.lark import _api_call
@@ -651,6 +678,7 @@ def create_callback_app() -> web.Application:
     app.router.add_get("/broadcast-welcome", _broadcast_welcome)
     app.router.add_get("/introduce", _introduce)
     app.router.add_get("/list-chats", _list_chats)
+    app.router.add_get("/cleanup-topics", _cleanup_topics)
     if os.environ.get("ENABLE_TEST_ENDPOINTS"):
         app.router.add_get("/test-card", _send_test_card)
     return app
