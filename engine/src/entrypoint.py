@@ -24,11 +24,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(
+    job_defaults={"misfire_grace_time": 300},  # 5 min grace for all jobs by default
+)
 
 
 async def execute_schedule(schedule_id: str):
     """执行一个推送计划"""
+    logger.info(f"=== execute_schedule called: {schedule_id} ===")
     try:
         resp = db.table("digest_schedules") \
             .select("*, companies(*)") \
@@ -37,6 +40,7 @@ async def execute_schedule(schedule_id: str):
             .execute()
         schedule = resp.data
         if not schedule:
+            logger.warning(f"Schedule {schedule_id} not found in DB")
             return
 
         company_id = schedule.get("company_id")
@@ -107,11 +111,26 @@ def load_schedules_from_db():
     schedules = resp.data or []
     registered = 0
 
+    # Track which job_ids are still active
+    active_job_ids = set()
+
     for s in schedules:
         job_id = f"schedule_{s['id']}"
-        # 先移除旧的（如果有）
+        active_job_ids.add(job_id)
+
         existing = scheduler.get_job(job_id)
         if existing:
+            # Only re-register if cron/tz changed — avoids resetting next_run_time
+            try:
+                cron_params = _parse_cron(s["cron_expression"])
+                tz = s.get("timezone") or "America/Toronto"
+                new_trigger = CronTrigger(timezone=tz, **cron_params)
+                # Compare trigger string representation
+                if str(existing.trigger) == str(new_trigger):
+                    registered += 1
+                    continue  # unchanged, skip
+            except Exception:
+                pass
             scheduler.remove_job(job_id)
 
         try:
@@ -124,11 +143,18 @@ def load_schedules_from_db():
                 args=[s["id"]],
                 id=job_id,
                 name=s["name"],
+                misfire_grace_time=600,  # Allow up to 10 min late execution
             )
             registered += 1
             logger.info(f"  Registered: {s['name']} ({s['cron_expression']} {tz})")
         except Exception as e:
             logger.error(f"  Failed to register {s['name']}: {e}")
+
+    # Remove jobs for schedules that were deactivated/deleted
+    for job in scheduler.get_jobs():
+        if job.id.startswith("schedule_") and job.id not in active_job_ids:
+            logger.info(f"  Removing stale schedule job: {job.name} ({job.id})")
+            scheduler.remove_job(job.id)
 
     logger.info(f"Loaded {registered}/{len(schedules)} schedules from DB")
     return registered
@@ -192,6 +218,11 @@ async def poll_manual_triggers():
 
 
 async def main():
+    from datetime import datetime, timezone as tz
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/Toronto")
+    logger.info(f"=== MailPulse Engine starting at {datetime.now(et).strftime('%Y-%m-%d %H:%M:%S %Z')} ===")
+
     # 从 DB 加载推送计划
     logger.info("Loading schedules from database...")
     load_schedules_from_db()
@@ -220,6 +251,7 @@ async def main():
         CronTrigger(hour=9, minute=30, day_of_week="mon-sat", timezone="America/Toronto"),
         id="daily_todo",
         name="Daily Todo Push",
+        misfire_grace_time=600,
     )
 
     # 高频轻量 sync：周一到周六 10:00-17:00 每小时
@@ -228,6 +260,7 @@ async def main():
         CronTrigger(hour="10-17", minute=0, day_of_week="mon-sat", timezone="America/Toronto"),
         id="hourly_sync",
         name="Hourly Lightweight Sync",
+        misfire_grace_time=300,
     )
 
     # 日历到期提醒：每天 8:30 AM
@@ -236,6 +269,7 @@ async def main():
         CronTrigger(hour=8, minute=30, day_of_week="mon-sat", timezone="America/Toronto"),
         id="calendar_due_check",
         name="Calendar Due Date Reminder",
+        misfire_grace_time=600,
     )
 
     # 个人周报：每周六 9:30 AM
@@ -244,6 +278,7 @@ async def main():
         CronTrigger(hour=9, minute=30, day_of_week="sat", timezone="America/Toronto"),
         id="weekly_report",
         name="Weekly Report Push",
+        misfire_grace_time=600,
     )
 
     scheduler.start()

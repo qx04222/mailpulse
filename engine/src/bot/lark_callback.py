@@ -200,7 +200,18 @@ def _handle_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerRespons
     })
 
 
-# Build the SDK v2 event handler (card actions + message receive)
+# ── No-op handlers for events we subscribe to but don't need to process ──
+
+def _handle_bot_p2p_chat_entered(data) -> None:
+    """User opened the bot chat — safe to ignore."""
+    logger.debug("[Lark] bot_p2p_chat_entered (ignored)")
+
+def _handle_message_read(data) -> None:
+    """User read a message — safe to ignore."""
+    logger.debug("[Lark] message_read (ignored)")
+
+
+# Build the SDK v2 event handler (card actions + message receive + no-op events)
 _event_handler = lark.EventDispatcherHandler.builder(
     settings.lark_encrypt_key,
     settings.lark_verification_token,
@@ -209,6 +220,10 @@ _event_handler = lark.EventDispatcherHandler.builder(
     _handle_card_action
 ).register_p2_im_message_receive_v1(
     handle_lark_message
+).register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(
+    _handle_bot_p2p_chat_entered
+).register_p2_im_message_message_read_v1(
+    _handle_message_read
 ).build()
 
 

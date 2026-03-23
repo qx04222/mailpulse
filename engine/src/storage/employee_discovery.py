@@ -92,16 +92,28 @@ def _find_person_by_username(email: str) -> Optional[Dict[str, Any]]:
 def _add_email_to_person(person_id: str, email: str, company_id: Optional[str] = None):
     """给已有人员添加一个新邮箱"""
     try:
+        email_lower = email.lower()
+        # Check if already exists to avoid unnecessary upsert
+        existing = db.table("person_emails") \
+            .select("id") \
+            .eq("email", email_lower) \
+            .limit(1) \
+            .execute()
+        if existing.data:
+            return  # already linked, skip
+
         data = {
             "person_id": person_id,
-            "email": email.lower(),
+            "email": email_lower,
             "is_primary": False,
         }
         if company_id:
             data["company_id"] = company_id
-        db.table("person_emails").upsert(data, on_conflict="email").execute()
-    except Exception:
-        pass
+        db.table("person_emails").insert(data).execute()
+    except Exception as e:
+        # Log but don't crash — duplicate email is expected race condition
+        import logging
+        logging.getLogger(__name__).debug(f"person_emails insert skip: {email} → {e}")
 
 
 def get_or_create_employee(

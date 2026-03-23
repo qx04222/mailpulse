@@ -112,6 +112,7 @@ async def send_daily_todo(person: Dict[str, Any]) -> bool:
     # Sort: urgent by days_pending desc
     urgent_items.sort(key=lambda x: x.get("days_pending", 0), reverse=True)
 
+    now = datetime.now(timezone.utc)
     date_str = now.strftime("%m月%d日 %A").replace(
         "Monday", "周一").replace("Tuesday", "周二").replace(
         "Wednesday", "周三").replace("Thursday", "周四").replace(
