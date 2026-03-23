@@ -611,6 +611,35 @@ async def _introduce(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, **result})
 
 
+async def _list_chats(request: web.Request) -> web.Response:
+    """List all group chats the bot is a member of."""
+    from ..destinations.lark import _api_call
+    try:
+        chats = []
+        page_token = ""
+        while True:
+            params = {"page_size": "50"}
+            if page_token:
+                params["page_token"] = page_token
+            data = _api_call("GET", "/open-apis/im/v1/chats", params=params)
+            items = data.get("data", {}).get("items", [])
+            for c in items:
+                chats.append({
+                    "chat_id": c.get("chat_id"),
+                    "name": c.get("name"),
+                    "chat_mode": c.get("chat_mode"),
+                    "chat_type": c.get("chat_type"),
+                    "owner_id": c.get("owner_id"),
+                })
+            if not data.get("data", {}).get("has_more"):
+                break
+            page_token = data.get("data", {}).get("page_token", "")
+        return web.json_response({"ok": True, "count": len(chats), "chats": chats})
+    except Exception as e:
+        logger.error(f"[List Chats] Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 def create_callback_app() -> web.Application:
     import os
     app = web.Application()
@@ -621,6 +650,7 @@ def create_callback_app() -> web.Application:
     app.router.add_post("/broadcast-file", _broadcast_file)
     app.router.add_get("/broadcast-welcome", _broadcast_welcome)
     app.router.add_get("/introduce", _introduce)
+    app.router.add_get("/list-chats", _list_chats)
     if os.environ.get("ENABLE_TEST_ENDPOINTS"):
         app.router.add_get("/test-card", _send_test_card)
     return app
