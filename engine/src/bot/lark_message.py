@@ -115,6 +115,36 @@ async def _handle_lark_message_async(data: P2ImMessageReceiveV1) -> None:
             send_text_message(chat_id, reply)
         return
 
+    # Quick command: 添加任务 <title>
+    if text.startswith("添加任务"):
+        task_title = text[4:].strip()
+        if not task_title:
+            reply = "请输入任务内容，例如：添加任务 跟进 Niall 报价"
+        else:
+            try:
+                from ..storage.action_items import upsert_action_item
+                item = upsert_action_item(
+                    company_id=companies[0]["id"],
+                    thread_id=None,
+                    email_id=None,
+                    client_id=None,
+                    title=task_title,
+                    priority="medium",
+                    assigned_to_id=person["id"],
+                    run_id="manual",
+                    description=f"手动创建 by {person.get('name', '')}",
+                )
+                reply = f"✅ 已添加待办：{task_title}"
+                logger.info(f"[Lark] Manual task created by {person['name']}: {task_title}")
+            except Exception as e:
+                logger.error(f"[Lark] Failed to create manual task: {e}")
+                reply = f"❌ 创建失败，请稍后重试"
+        if chat_type == "p2p":
+            send_user_message(open_id, reply)
+        else:
+            send_text_message(chat_id, reply)
+        return
+
     qa_enabled = any(is_feature_enabled(c["id"], "lark_qa") for c in companies)
     if not qa_enabled:
         return

@@ -64,7 +64,6 @@ from .destinations.supabase_upload import upload_report
 from .destinations import lark as lark_client
 from .destinations.lark_cards import (
     build_daily_digest_card,
-    build_client_thread_card,
 )
 from .destinations.lark_base import sync_threads_to_base, create_thread_table
 from .destinations.lark_calendar import sync_followups_to_calendar
@@ -145,7 +144,7 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
         items = gmail.fetch(
             label=gmail_label,
             lookback_days=settings.digest_lookback_days,
-            include_trash=True,
+            include_trash=False,
             include_spam=True,
         )
         print(f"  -> {len(items)} emails fetched")
@@ -637,6 +636,8 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                 except Exception:
                     pass
 
+                # Collect per-person task data for personal DMs
+                all_hp_lines = []  # for group text summary
                 for s in high_priority[:10]:
                     item = s["item"]
                     gmail_thread_id = item.metadata.get("thread_id", item.id)
@@ -654,25 +655,36 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                             break
 
                     action_item_id = _ai_lookup.get(thread_id, "")
-                    thread_card = build_client_thread_card(
-                        thread_id=thread_id,
-                        subject=item.subject,
-                        client_name=s.get("client_name", ""),
-                        score=s.get("score", 0),
-                        summary=s.get("one_line", ""),
-                        assignee=assignee_name_hp,
-                        email_count=1,
-                        direction=s.get("direction", ""),
-                        action_item_id=action_item_id,
-                    )
+                    task_data = {
+                        "subject": item.subject,
+                        "client_name": s.get("client_name", ""),
+                        "score": s.get("score", 0),
+                        "summary": s.get("one_line", ""),
+                        "action_item_id": action_item_id,
+                        "thread_id": thread_id,
+                    }
 
                     if assignee_id_hp:
-                        personal_thread_cards.setdefault(assignee_id_hp, []).append(
-                            {"card": thread_card, "action_item_id": action_item_id}
-                        )
-                    else:
-                        # Unassigned high-priority → send to group chat
-                        lark_client.send_card_message(lark_group_id, thread_card)
+                        personal_thread_cards.setdefault(assignee_id_hp, []).append(task_data)
+
+                    # Build line for group text summary
+                    score = s.get("score", 0)
+                    icon = "🔴" if score >= 5 else ("🟠" if score >= 4 else "🟡")
+                    client = s.get("client_name", "")
+                    subject_short = item.subject[:50]
+                    assignee_label = assignee_name_hp if assignee_name_hp else "未分配"
+                    line = f"{icon} {len(all_hp_lines) + 1}. {subject_short}"
+                    if client:
+                        line += f" — {client}"
+                    line += f" → {assignee_label}"
+                    all_hp_lines.append(line)
+
+                # Send high-priority text summary to group chat
+                if all_hp_lines:
+                    hp_text = f"📬 今日高优邮件 ({len(all_hp_lines)}项)\n\n"
+                    hp_text += "\n".join(all_hp_lines)
+                    lark_client.send_text_message(lark_group_id, hp_text)
+                    print(f"  -> Lark high-priority summary sent to group ({len(all_hp_lines)} items)")
 
                 # Send DOCX to group chat
                 if docx_bytes:
@@ -764,29 +776,47 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
 
                 # Try Lark DM first
                 if lark_user_id and settings.lark_enabled and settings.lark_app_id:
-                    from .destinations.lark import send_user_message, send_user_card
+                    from .destinations.lark import send_user_message
 
-                    # Send thread cards assigned to this person + track dm_sent_at
-                    for entry in member_card_entries:
-                        card = entry.get("card", entry) if isinstance(entry, dict) else entry
-                        msg_id = send_user_card(lark_user_id, card)
-                        # Track DM sent for escalation
-                        ai_id = entry.get("action_item_id") if isinstance(entry, dict) else None
-                        if ai_id and msg_id:
-                            try:
-                                from .storage.db import db as _dm_db
-                                _dm_db.table("action_items").update({
-                                    "dm_sent_at": datetime.now(timezone.utc).isoformat(),
-                                    "dm_message_id": msg_id,
-                                }).eq("id", ai_id).execute()
-                            except Exception:
-                                pass
+                    # Send plain-text task list DM
+                    if member_card_entries:
+                        lines = []
+                        for i, entry in enumerate(member_card_entries, 1):
+                            score = entry.get("score", 0)
+                            icon = "🔴" if score >= 5 else ("🟠" if score >= 4 else "🟡")
+                            subject = entry.get("subject", "")[:50]
+                            client = entry.get("client_name", "")
+                            summary = entry.get("summary", "")
+                            line = f"{icon} {i}. {subject}"
+                            if client:
+                                line += f"\n   客户: {client}"
+                            if summary:
+                                line += f" · {summary}"
+                            lines.append(line)
+
+                        task_text = f"📋 {company_name} 待办 ({len(member_card_entries)}项)\n\n"
+                        task_text += "\n".join(lines)
+                        task_text += "\n\n💡 回复 \"添加任务 <内容>\" 可快速创建个人待办"
+                        dm_ok = send_user_message(lark_user_id, task_text)
+
+                        # Track dm_sent_at for all action items in this batch
+                        if dm_ok:
+                            for entry in member_card_entries:
+                                ai_id = entry.get("action_item_id")
+                                if ai_id:
+                                    try:
+                                        from .storage.db import db as _dm_db
+                                        _dm_db.table("action_items").update({
+                                            "dm_sent_at": datetime.now(timezone.utc).isoformat(),
+                                        }).eq("id", ai_id).execute()
+                                    except Exception:
+                                        pass
 
                     # Send personal summary text
                     if personal_summary:
                         lark_ok = send_user_message(lark_user_id, personal_summary)
                         if lark_ok:
-                            print(f"  -> Personal Lark DM ({member['name']}): sent ({len(member_card_entries)} cards + summary)")
+                            print(f"  -> Personal Lark DM ({member['name']}): sent ({len(member_card_entries)} tasks + summary)")
 
                 # Telegram fallback
                 telegram_user_id = member.get("telegram_user_id")
@@ -899,7 +929,7 @@ async def run_company_report_only(company: Dict[str, Any]) -> tuple:
     items = gmail.fetch(
         label=gmail_label,
         lookback_days=settings.digest_lookback_days,
-        include_trash=True,
+        include_trash=False,
         include_spam=True,
     )
 

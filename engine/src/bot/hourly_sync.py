@@ -10,8 +10,7 @@ from typing import Dict, List, Any, Optional
 from ..config import reload_config, load_companies, load_people, get_person_by_id
 from ..main import run_company
 from ..storage.db import db
-from ..destinations.lark import send_user_card
-from ..destinations.lark_cards import build_client_thread_card
+from ..destinations.lark import send_user_message
 from .helpers import is_feature_enabled
 
 logger = logging.getLogger(__name__)
@@ -104,7 +103,7 @@ def _ensure_action_item(email: Dict, company_id: str, assigned_to_id: str) -> Op
 
 
 async def notify_urgent_emails(company: Dict[str, Any]):
-    """Send instant Lark DM for high-priority emails found during sync."""
+    """Send consolidated Lark DM for high-priority emails found during sync."""
     company_id = company["id"]
     company_name = company["name"]
 
@@ -114,7 +113,10 @@ async def notify_urgent_emails(company: Dict[str, Any]):
 
     people = load_people()
     people_map = {p["id"]: p for p in people}
-    sent = 0
+
+    # Group by assignee: person_id -> list of task data
+    per_person: Dict[str, List[Dict]] = {}
+    notifiable_emails: Dict[str, List[Dict]] = {}  # person_id -> emails (for record_notification)
 
     for email in urgent:
         email_id = email.get("id")
@@ -129,35 +131,58 @@ async def notify_urgent_emails(company: Dict[str, Any]):
         if not person or not person.get("lark_user_id"):
             continue
 
-        # Ensure an action_item exists for this urgent email
         action_item_id = _ensure_action_item(email, company_id, assigned_id)
 
-        # Build notification card with action buttons
-        card = build_client_thread_card(
-            thread_id=email.get("thread_id", ""),
-            subject=email.get("subject", ""),
-            client_name=email.get("client_name", ""),
-            score=email.get("score", 4),
-            summary=email.get("one_line", ""),
-            assignee=person.get("name", ""),
-            email_count=1,
-            direction="inbound",
-            action_item_id=action_item_id,
-        )
+        per_person.setdefault(assigned_id, []).append({
+            "subject": email.get("subject", ""),
+            "client_name": email.get("client_name", ""),
+            "score": email.get("score", 4),
+            "summary": email.get("one_line", ""),
+            "action_item_id": action_item_id,
+        })
+        notifiable_emails.setdefault(assigned_id, []).append({
+            "email_id": email_id,
+            "action_item_id": action_item_id,
+        })
 
-        msg_id = send_user_card(person["lark_user_id"], card)
-        if msg_id:
-            _record_notification(company_id, email_id, assigned_id)
-            # Track DM sent time for escalation
-            if action_item_id:
-                try:
-                    db.table("action_items").update({
-                        "dm_sent_at": datetime.now(timezone.utc).isoformat(),
-                    }).eq("id", action_item_id).execute()
-                except Exception:
-                    pass
-            sent += 1
-            logger.info(f"[Hourly] Urgent notify: {email['subject'][:40]} -> {person['name']}")
+    # Send one plain-text DM per person
+    sent = 0
+    for person_id, tasks in per_person.items():
+        person = people_map.get(person_id)
+        if not person:
+            continue
+
+        lines = []
+        for i, t in enumerate(tasks, 1):
+            score = t.get("score", 0)
+            icon = "🔴" if score >= 5 else ("🟠" if score >= 4 else "🟡")
+            subject = t.get("subject", "")[:50]
+            client = t.get("client_name", "")
+            summary = t.get("summary", "")
+            line = f"{icon} {i}. {subject}"
+            if client:
+                line += f"\n   客户: {client}"
+            if summary:
+                line += f" · {summary}"
+            lines.append(line)
+
+        task_text = f"⚡ {company_name} 紧急邮件 ({len(tasks)}项)\n\n"
+        task_text += "\n".join(lines)
+        task_text += "\n\n💡 回复 \"添加任务 <内容>\" 可快速创建个人待办"
+
+        dm_ok = send_user_message(person["lark_user_id"], task_text)
+        if dm_ok:
+            for entry in notifiable_emails.get(person_id, []):
+                _record_notification(company_id, entry["email_id"], person_id)
+                if entry.get("action_item_id"):
+                    try:
+                        db.table("action_items").update({
+                            "dm_sent_at": datetime.now(timezone.utc).isoformat(),
+                        }).eq("id", entry["action_item_id"]).execute()
+                    except Exception:
+                        pass
+            sent += len(tasks)
+            logger.info(f"[Hourly] Sent {len(tasks)} tasks to {person['name']} (text DM)")
 
     return sent
 
