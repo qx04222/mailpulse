@@ -23,6 +23,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Silence noisy loggers: APScheduler executor + httpx per-request logs
+logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 scheduler = AsyncIOScheduler(
     job_defaults={"misfire_grace_time": 300},  # 5 min grace for all jobs by default
 )
@@ -168,7 +172,7 @@ async def reload_schedules():
 
 
 async def poll_manual_triggers():
-    """每 15 秒检查 manual_triggers 表"""
+    """每 60 秒检查 manual_triggers 表"""
     try:
         resp = db.table("manual_triggers") \
             .select("*") \
@@ -178,7 +182,7 @@ async def poll_manual_triggers():
             .execute()
 
         if not resp.data:
-            return
+            return  # silent: no pending triggers
 
         trigger = resp.data[0]
         trigger_id = trigger["id"]
@@ -226,22 +230,35 @@ async def main():
     logger.info("Loading schedules from database...")
     load_schedules_from_db()
 
-    # 手动触发轮询：每 15 秒
+    # 手动触发轮询：每 60 秒
     scheduler.add_job(
         poll_manual_triggers,
         "interval",
-        seconds=15,
+        seconds=60,
         id="manual_trigger_poll",
         name="Manual Trigger Poll",
     )
 
-    # 定期重新加载推送计划：每 5 分钟
+    # 定期重新加载推送计划：每 10 分钟
     scheduler.add_job(
         reload_schedules,
         "interval",
-        minutes=5,
+        minutes=10,
         id="reload_schedules",
         name="Reload Schedules from DB",
+    )
+
+    # 心跳日志：每 5 分钟确认 engine 存活
+    async def heartbeat():
+        jobs = scheduler.get_jobs()
+        logger.info(f"[heartbeat] alive, {len(jobs)} jobs registered")
+
+    scheduler.add_job(
+        heartbeat,
+        "interval",
+        minutes=5,
+        id="heartbeat",
+        name="Engine Heartbeat",
     )
 
     # 每日待办推送：9:30 AM
