@@ -304,7 +304,7 @@ def _format_telegram_brief(data: dict, company: str, date_range: str) -> str:
     """从结构化数据生成 Telegram 简要消息"""
     overview = data.get("overview", {})
     lines = [
-        f"*📊 {company} 邮件周报 · {date_range}*",
+        f"*📊 {company} 邮件摘要 · {date_range}*",
         f"本期共 {overview.get('total_emails', 0)} 封邮件",
         "",
     ]

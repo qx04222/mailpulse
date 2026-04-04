@@ -29,6 +29,24 @@ def _note(text: str) -> Dict:
 # 1. 公司周报卡片
 # ══════════════════════════════════════════════════════════════
 
+def _report_label(date_range: str) -> str:
+    """Determine '日报' vs '周报' based on date_range span."""
+    try:
+        parts = date_range.replace("–", "-").split("-")
+        if len(parts) == 2:
+            # parse MM/DD - MM/DD
+            start_md = parts[0].strip().split("/")
+            end_md = parts[1].strip().split("/")
+            start_day = int(start_md[1]) if len(start_md) == 2 else int(start_md[0])
+            end_day = int(end_md[1]) if len(end_md) == 2 else int(end_md[0])
+            span = abs(end_day - start_day)
+            if span <= 1:
+                return "邮件日报"
+    except Exception:
+        pass
+    return "邮件日报" if "–" not in date_range and "-" not in date_range else "邮件周报"
+
+
 def build_daily_digest_card(
     company_name: str,
     date_range: str,
@@ -40,7 +58,8 @@ def build_daily_digest_card(
     group_reports: Dict[str, str],
     top_actions: Optional[List[Dict]] = None,
 ) -> Dict[str, Any]:
-    """公司周报摘要卡片"""
+    """公司日报/周报摘要卡片（根据 date_range 自动判断标题）"""
+    label = _report_label(date_range)
     elements = []
 
     # 概览
@@ -79,7 +98,7 @@ def build_daily_digest_card(
     return {
         "config": {"wide_screen_mode": True},
         "header": _header(
-            f"{'🔴 ' if high_priority > 0 else '📊 '}{company_name} 邮件周报 · {date_range}",
+            f"{'🔴 ' if high_priority > 0 else '📊 '}{company_name} {label} · {date_range}",
             "red" if high_priority > 0 else "blue",
         ),
         "elements": elements,

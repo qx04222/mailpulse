@@ -103,6 +103,22 @@ def _create_table(doc, headers: list, rows: list, col_widths: list = None,
     doc.add_paragraph()  # 表后间距
 
 
+def _report_label(date_range: str) -> str:
+    """Determine '日报' vs '周报' from date_range string."""
+    try:
+        parts = date_range.replace("–", "-").split("-")
+        if len(parts) == 2:
+            start_md = parts[0].strip().split("/")
+            end_md = parts[1].strip().split("/")
+            start_day = int(start_md[1]) if len(start_md) == 2 else int(start_md[0])
+            end_day = int(end_md[1]) if len(end_md) == 2 else int(end_md[0])
+            if abs(end_day - start_day) <= 1:
+                return "邮件日报"
+    except Exception:
+        pass
+    return "邮件日报" if "–" not in date_range and "-" not in date_range else "邮件周报"
+
+
 def generate_report_docx(digest_data: dict, company_name: str, date_range: str) -> bytes:
     """生成结构化 DOCX 报告"""
     doc = Document()
@@ -114,9 +130,10 @@ def generate_report_docx(digest_data: dict, company_name: str, date_range: str) 
     style._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
 
     overview = digest_data.get("overview", {})
+    label = _report_label(date_range)
 
     # ── 标题页 ──────────────────────────────────────────────────
-    _add_styled_paragraph(doc, f"{company_name} 邮件周报",
+    _add_styled_paragraph(doc, f"{company_name} {label}",
                           font_size=22, bold=True,
                           color=RGBColor(46, 117, 182),
                           alignment=WD_ALIGN_PARAGRAPH.CENTER,

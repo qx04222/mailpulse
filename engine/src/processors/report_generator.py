@@ -295,7 +295,8 @@ async def generate_full_report(
     # Step 1: 从 DB 读取
     emails = get_emails_for_report(company_id, lookback_days)
     if not emails:
-        brief = f"{company_name} 周报 · {date_range}\n本期无邮件。"
+        _label = "日报" if lookback_days <= 1 else "周报"
+        brief = f"{company_name} {_label} · {date_range}\n本期无邮件。"
         return brief, {}, brief
 
     print(f"  -> Report: {len(emails)} emails from DB")
@@ -326,10 +327,11 @@ async def generate_full_report(
         except Exception as e:
             group_reports[assignee] = f"【{assignee}】报告生成失败: {str(e)[:100]}"
 
-    # Step 6: 合并
+    # Step 6: ���并
+    _label = "邮件日报" if lookback_days <= 1 else "邮件周报"
     full_lines = [
         f"{'='*40}",
-        f"{company_name} 邮件周报",
+        f"{company_name} {_label}",
         f"统计周期：{date_range}",
         f"{'='*40}",
         "",
@@ -355,9 +357,8 @@ async def generate_full_report(
 
     full_text = "\n".join(full_lines)
 
-    # Telegram 简要
     brief_lines = [
-        f"{company_name} 周报 · {date_range}",
+        f"{company_name} {_label} · {date_range}",
         f"共 {len(emails)} 封邮件，{len(threads)} 个对话",
         "",
     ]

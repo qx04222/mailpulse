@@ -9,9 +9,9 @@ from typing import List, Dict, Any
 from ..config import load_companies, load_people
 from ..storage.db import db
 from ..storage.action_items import get_pending_items
-from ..destinations.lark import send_user_card
-from ..destinations.lark_cards import build_daily_todo_card
+from ..destinations.lark import send_user_message
 from .helpers import is_feature_enabled, get_person_companies
+from ..utils.holidays import is_business_day
 
 logger = logging.getLogger(__name__)
 
@@ -118,15 +118,40 @@ async def send_daily_todo(person: Dict[str, Any]) -> bool:
         "Wednesday", "周三").replace("Thursday", "周四").replace(
         "Friday", "周五").replace("Saturday", "周六").replace("Sunday", "周日")
 
-    card = build_daily_todo_card(
-        person_name=name,
-        date_str=date_str,
-        urgent_items=urgent_items,
-        pending_items=pending_items,
-        followup_items=followup_items,
-    )
+    # Build plain-text todo list
+    lines = [f"📋 {name} 今日待办 · {date_str}", ""]
 
-    msg_id = send_user_card(open_id, card)
+    if urgent_items:
+        lines.append("🔴 需立即处理")
+        for i, item in enumerate(urgent_items[:5], 1):
+            title = item.get("title", "")[:50]
+            days = item.get("days_pending", 0)
+            suffix = f" — 等待 {days} 天" if days else ""
+            lines.append(f"{i}. {title}{suffix}")
+        lines.append("")
+
+    if followup_items:
+        lines.append("📧 需跟进")
+        for i, item in enumerate(followup_items[:5], 1):
+            subject = item.get("subject", "")[:50]
+            reason = item.get("reason", "")
+            lines.append(f"{i}. {subject}")
+            if reason:
+                lines.append(f"   {reason}")
+        lines.append("")
+
+    if pending_items:
+        lines.append("🟡 进行中")
+        for i, item in enumerate(pending_items[:5], 1):
+            title = item.get("title", "")[:50]
+            lines.append(f"{i}. {title}")
+        lines.append("")
+
+    total = len(urgent_items) + len(pending_items) + len(followup_items)
+    lines.append(f"共 {total} 项待办 · MailPulse")
+
+    text = "\n".join(lines)
+    msg_id = send_user_message(open_id, text)
     if msg_id:
         logger.info(f"[Daily Todo] Sent to {name}: {len(urgent_items)} urgent, {len(pending_items)} pending, {len(followup_items)} followups")
         return True
@@ -135,6 +160,9 @@ async def send_daily_todo(person: Dict[str, Any]) -> bool:
 
 async def send_all_daily_todos():
     """Send daily todo cards to all eligible people."""
+    if not is_business_day():
+        logger.info("[Daily Todo] Skipped — not a business day (Sunday or holiday)")
+        return
     logger.info("[Daily Todo] Starting daily todo push...")
     people = load_people()
     sent = 0

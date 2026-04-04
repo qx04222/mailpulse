@@ -28,6 +28,19 @@ class DigestPDF(FPDF):
         super().__init__()
         self.company_name = company_name
         self.date_range = date_range
+        # Determine label from date_range span
+        try:
+            parts = date_range.replace("–", "-").split("-")
+            if len(parts) == 2:
+                s = parts[0].strip().split("/")
+                e = parts[1].strip().split("/")
+                sd = int(s[1]) if len(s) == 2 else int(s[0])
+                ed = int(e[1]) if len(e) == 2 else int(e[0])
+                self._report_label = "邮件日报" if abs(ed - sd) <= 1 else "邮件周报"
+            else:
+                self._report_label = "邮件日报"
+        except Exception:
+            self._report_label = "邮件周报"
 
         # 加载中文字体
         if CJK_FONT_PATH:
@@ -40,7 +53,8 @@ class DigestPDF(FPDF):
     def header(self):
         self.set_font(self._font_family, "B", 16)
         self.set_text_color(33, 37, 41)
-        self.cell(0, 12, f"{self.company_name} 邮件周报", ln=True, align="C")
+        label = self._report_label
+        self.cell(0, 12, f"{self.company_name} {label}", ln=True, align="C")
         self.set_font(self._font_family, "", 10)
         self.set_text_color(108, 117, 125)
         self.cell(0, 8, self.date_range, ln=True, align="C")

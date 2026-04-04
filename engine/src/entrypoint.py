@@ -15,7 +15,8 @@ from .bot.server import create_bot_app
 from .bot.lark_callback import create_callback_app
 from .bot.daily_todo import send_all_daily_todos
 from .bot.hourly_sync import hourly_sync
-from .processors.calendar_sync import check_due_calendar_events
+from .processors.calendar_sync import check_due_calendar_events as _check_due_calendar_events
+from .utils.holidays import is_business_day
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +34,10 @@ scheduler = AsyncIOScheduler(
 
 
 async def execute_schedule(schedule_id: str):
-    """执行一个推送计划"""
+    """执行一个推送计划（节假日/周日自动跳过）"""
+    if not is_business_day():
+        logger.info(f"Schedule {schedule_id} skipped — not a business day")
+        return
     logger.info(f"=== execute_schedule called: {schedule_id} ===")
     try:
         resp = db.table("digest_schedules") \
@@ -279,9 +283,15 @@ async def main():
         misfire_grace_time=300,
     )
 
-    # 日历到期提醒：每天 8:30 AM
+    # 日历到期提醒：每天 8:30 AM（节假日跳过）
+    async def _calendar_check_guarded():
+        if not is_business_day():
+            logger.info("[Calendar] Skipped — not a business day")
+            return
+        await _check_due_calendar_events()
+
     scheduler.add_job(
-        check_due_calendar_events,
+        _calendar_check_guarded,
         CronTrigger(hour=8, minute=30, day_of_week="mon-sat", timezone="America/Toronto"),
         id="calendar_due_check",
         name="Calendar Due Date Reminder",

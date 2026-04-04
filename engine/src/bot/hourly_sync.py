@@ -190,8 +190,12 @@ async def notify_urgent_emails(company: Dict[str, Any]):
 async def hourly_sync():
     """
     Lightweight hourly sync: pull emails + score + notify urgent.
-    10:00-17:00 Mon-Sat.
+    10:00-17:00 Mon-Sat, skips holidays.
     """
+    from ..utils.holidays import is_business_day
+    if not is_business_day():
+        logger.info("[Hourly Sync] Skipped — not a business day")
+        return
     logger.info("[Hourly Sync] Starting...")
     reload_config()
     companies = load_companies()

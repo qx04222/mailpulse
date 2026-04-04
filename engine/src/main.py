@@ -679,12 +679,8 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
                     line += f" → {assignee_label}"
                     all_hp_lines.append(line)
 
-                # Send high-priority text summary to group chat
-                if all_hp_lines:
-                    hp_text = f"📬 今日高优邮件 ({len(all_hp_lines)}项)\n\n"
-                    hp_text += "\n".join(all_hp_lines)
-                    lark_client.send_text_message(lark_group_id, hp_text)
-                    print(f"  -> Lark high-priority summary sent to group ({len(all_hp_lines)} items)")
+                # High-priority info is already included in the digest card's
+                # "重点行动项" section — no separate list needed in group chat.
 
                 # Send DOCX to group chat
                 if docx_bytes:
