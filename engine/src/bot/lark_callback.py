@@ -243,6 +243,16 @@ async def handle_lark_callback(request: web.Request) -> web.Response:
 
     logger.info(f"[Lark Callback] Received: {body[:300].decode('utf-8', errors='replace')}")
 
+    # Handle v1 message_read events that the SDK v2 dispatcher doesn't recognise
+    try:
+        import json as _json
+        payload = _json.loads(body)
+        if payload.get("event", {}).get("type") == "message_read" and "schema" not in payload:
+            logger.debug("[Lark] message_read v1 (ignored)")
+            return web.json_response({"msg": "success"})
+    except Exception:
+        pass
+
     raw_resp: lark.RawResponse = _event_handler.do(raw_req)
 
     logger.info(f"[Lark Callback] Response status={raw_resp.status_code} body={raw_resp.content[:300] if raw_resp.content else b''}")

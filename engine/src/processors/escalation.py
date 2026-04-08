@@ -32,7 +32,7 @@ def check_unacknowledged_dms(
 
     try:
         resp = db.table("action_items") \
-            .select("*, people(name, lark_user_id), clients(name)") \
+            .select("*, people!action_items_assigned_to_id_fkey(name, lark_user_id), clients(name)") \
             .eq("company_id", company_id) \
             .eq("dm_acknowledged", False) \
             .eq("escalated_to_group", False) \

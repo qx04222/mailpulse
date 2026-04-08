@@ -217,7 +217,7 @@ async def check_due_calendar_events() -> int:
 
     try:
         resp = db.table("action_items") \
-            .select("id, title, priority, due_date, assigned_to_id, lark_calendar_event_id, people(name, lark_user_id)") \
+            .select("id, title, priority, due_date, assigned_to_id, lark_calendar_event_id, people!action_items_assigned_to_id_fkey(name, lark_user_id)") \
             .not_.is_("lark_calendar_event_id", "null") \
             .in_("status", ["pending", "in_progress"]) \
             .execute()
