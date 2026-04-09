@@ -114,17 +114,17 @@ async def run_company(company: Dict[str, Any], sync_only: bool = False) -> Dict[
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting {company_name}...")
 
-    # 0. Check for unacknowledged DMs from previous runs (escalation safety net)
-    lark_group_id_early = company.get("lark_group_id", "")
-    if lark_group_id_early and settings.lark_enabled and settings.lark_app_id:
-        try:
-            check_unacknowledged_dms(
-                company_id=company_id,
-                company_name=company_name,
-                lark_group_id=lark_group_id_early,
-            )
-        except Exception as e:
-            print(f"  -> Escalation check error: {e}")
+    # 0. Escalation safety net — disabled (too noisy in group chat)
+    # lark_group_id_early = company.get("lark_group_id", "")
+    # if lark_group_id_early and settings.lark_enabled and settings.lark_app_id:
+    #     try:
+    #         check_unacknowledged_dms(
+    #             company_id=company_id,
+    #             company_name=company_name,
+    #             lark_group_id=lark_group_id_early,
+    #         )
+    #     except Exception as e:
+    #         print(f"  -> Escalation check error: {e}")
 
     # 1. Create digest run
     run_id = create_run(company_id, lookback_days=settings.digest_lookback_days)
