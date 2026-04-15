@@ -1,26 +1,58 @@
 import os
 import re
+import logging
 from typing import Optional, List
 from fpdf import FPDF
 from datetime import datetime
 
-# 中文字体查找顺序：系统字体 → 项目字体 → fallback
+log = logging.getLogger(__name__)
+
+# 中文字体查找顺序：系统字体 → 项目字体
 FONT_CANDIDATES = [
-    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",  # macOS
-    "/Library/Fonts/Arial Unicode.ttf",                       # macOS alt
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", # Linux/Railway
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",          # macOS
+    "/Library/Fonts/Arial Unicode.ttf",                               # macOS alt
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",         # Debian/Ubuntu (fonts-noto-cjk)
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",         # fallback
+    os.path.join(os.path.dirname(__file__), "..", "..", "fonts", "NotoSansSC-Regular.otf"),
     os.path.join(os.path.dirname(__file__), "..", "..", "fonts", "NotoSansSC-Regular.ttf"),
 ]
+
+# 字体文件的 magic bytes — 只校验真正的字体，防止 HTML 错误页 / LFS pointer 被当作字体加载
+_FONT_MAGIC = (
+    b"\x00\x01\x00\x00",  # TrueType
+    b"OTTO",              # OpenType (CFF)
+    b"ttcf",              # TrueType Collection
+    b"true",              # macOS TrueType
+    b"typ1",              # PostScript Type 1
+)
+
+
+def _is_real_font(path: str) -> bool:
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4)
+        return head in _FONT_MAGIC
+    except OSError:
+        return False
 
 
 def _find_cjk_font() -> Optional[str]:
     for path in FONT_CANDIDATES:
-        if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
+        if os.path.exists(path) and _is_real_font(path):
             return path
     return None
 
 
 CJK_FONT_PATH = _find_cjk_font()
+
+if CJK_FONT_PATH:
+    log.info("[pdf_report] CJK font loaded: %s", CJK_FONT_PATH)
+else:
+    log.warning(
+        "[pdf_report] No valid CJK font found. PDF reports with Chinese text will fail. "
+        "Checked: %s",
+        FONT_CANDIDATES,
+    )
 
 
 class DigestPDF(FPDF):
@@ -42,13 +74,15 @@ class DigestPDF(FPDF):
         except Exception:
             self._report_label = "邮件周报"
 
-        # 加载中文字体
-        if CJK_FONT_PATH:
-            self.add_font("CJK", "", CJK_FONT_PATH, uni=True)
-            self.add_font("CJK", "B", CJK_FONT_PATH, uni=True)
-            self._font_family = "CJK"
-        else:
-            self._font_family = "Helvetica"
+        # 加载中文字体 — 缺失时 fail loud，避免运行到中文字符才崩
+        if not CJK_FONT_PATH:
+            raise RuntimeError(
+                "CJK font unavailable; install fonts-noto-cjk or ship a real "
+                "NotoSansSC-Regular.{otf,ttf} in engine/fonts/."
+            )
+        self.add_font("CJK", "", CJK_FONT_PATH, uni=True)
+        self.add_font("CJK", "B", CJK_FONT_PATH, uni=True)
+        self._font_family = "CJK"
 
     def header(self):
         self.set_font(self._font_family, "B", 16)
