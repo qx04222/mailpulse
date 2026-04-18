@@ -15,6 +15,37 @@ from .helpers import is_feature_enabled
 
 logger = logging.getLogger(__name__)
 
+# Tracks consecutive hourly runs where ALL companies failed.
+# Used to alert the admin via Lark DM when systemic failures persist
+# (e.g. Gmail OAuth tokens expiring across the board).
+_CONSECUTIVE_ALL_FAIL_RUNS = 0
+
+
+def _find_admin_lark_id() -> Optional[str]:
+    """
+    Find the admin's Lark user ID.
+    Prefers a person with is_admin=True; falls back to a person named "Xin".
+    Returns None if nothing matches.
+    """
+    try:
+        people = load_people()
+    except Exception as e:
+        logger.warning(f"[Hourly] Could not load people to find admin: {e}")
+        return None
+
+    # Prefer explicit is_admin flag
+    for p in people:
+        if p.get("is_admin") and p.get("lark_user_id"):
+            return p["lark_user_id"]
+
+    # Fallback: name contains "Xin"
+    for p in people:
+        name = (p.get("name") or "")
+        if "Xin" in name and p.get("lark_user_id"):
+            return p["lark_user_id"]
+
+    return None
+
 
 def _get_new_urgent_emails(company_id: str, since_minutes: int = 65) -> List[Dict]:
     """Get emails scored >= 4 that were inserted in the last ~hour."""
@@ -200,8 +231,13 @@ async def hourly_sync():
     reload_config()
     companies = load_companies()
 
+    global _CONSECUTIVE_ALL_FAIL_RUNS
+
     total_emails = 0
     total_urgent = 0
+    succeeded_count = 0
+    failed_count = 0
+    failed_companies: List[str] = []
 
     for company in companies:
         try:
@@ -216,7 +252,74 @@ async def hourly_sync():
             if emails > 0 or urgent_count > 0:
                 logger.info(f"[Hourly] {company['name']}: {emails} emails, {urgent_count} urgent notified")
 
+            succeeded_count += 1
+
         except Exception as e:
             logger.error(f"[Hourly] Error for {company['name']}: {e}")
+            failed_count += 1
+            failed_companies.append(company.get("name", "?"))
 
     logger.info(f"[Hourly Sync] Done: {total_emails} emails synced, {total_urgent} urgent notified")
+
+    # Systemic-failure alerting: if every company failed this run, bump the
+    # consecutive-failure counter. On any success, reset. When the counter
+    # reaches 2 (two full hourly cycles with 100% failure), DM the admin.
+    if companies and failed_count == len(companies):
+        _CONSECUTIVE_ALL_FAIL_RUNS += 1
+        logger.warning(
+            f"[Hourly] All {failed_count} companies failed this run "
+            f"(consecutive all-fail runs: {_CONSECUTIVE_ALL_FAIL_RUNS})"
+        )
+
+        # Notify on 2nd consecutive all-fail run, then dampen:
+        # re-notify only after 6 more all-fail runs (i.e. 2, 8, 14, ...).
+        should_notify = (
+            _CONSECUTIVE_ALL_FAIL_RUNS == 2
+            or (_CONSECUTIVE_ALL_FAIL_RUNS > 2
+                and (_CONSECUTIVE_ALL_FAIL_RUNS - 2) % 6 == 0)
+        )
+
+        if should_notify:
+            admin_lark_id = _find_admin_lark_id()
+            if not admin_lark_id:
+                logger.warning(
+                    "[Hourly] Systemic failure detected but no admin Lark ID "
+                    "found (no is_admin person and no person named 'Xin' with "
+                    "lark_user_id). Skipping alert."
+                )
+            else:
+                companies_text = ", ".join(failed_companies) or "(none)"
+                alert_msg = (
+                    "⚠️ MailPulse 系统告警 / Systemic Sync Failure\n\n"
+                    f"连续 {_CONSECUTIVE_ALL_FAIL_RUNS} 次小时同步，"
+                    f"全部 {failed_count} 家公司均失败。\n"
+                    f"{_CONSECUTIVE_ALL_FAIL_RUNS} consecutive hourly runs "
+                    f"with ALL {failed_count} companies failing.\n\n"
+                    f"失败公司 / Failed companies: {companies_text}\n\n"
+                    "👉 请检查 Gmail OAuth 授权是否过期 "
+                    "(refresh token / client credentials)。\n"
+                    "👉 Please verify Gmail OAuth — refresh tokens may have "
+                    "expired or been revoked."
+                )
+                try:
+                    sent = send_user_message(admin_lark_id, alert_msg)
+                    if sent:
+                        logger.info(
+                            f"[Hourly] Sent systemic-failure alert to admin "
+                            f"(lark_user_id={admin_lark_id})"
+                        )
+                    else:
+                        logger.warning(
+                            "[Hourly] send_user_message returned falsy for "
+                            "admin alert"
+                        )
+                except Exception as e:
+                    logger.error(f"[Hourly] Failed to send admin alert: {e}")
+    else:
+        if _CONSECUTIVE_ALL_FAIL_RUNS > 0:
+            logger.info(
+                f"[Hourly] Resetting consecutive all-fail counter "
+                f"(was {_CONSECUTIVE_ALL_FAIL_RUNS}, "
+                f"{succeeded_count} companies succeeded this run)"
+            )
+        _CONSECUTIVE_ALL_FAIL_RUNS = 0
