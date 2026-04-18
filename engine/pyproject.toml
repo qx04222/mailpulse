@@ -30,3 +30,24 @@ test = [
 testpaths = ["tests"]
 pythonpath = [".."]
 asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = [
+    "tests",
+    "scripts",
+    "migrations",
+    ".venv",
+]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = [
+    "E501",  # line-too-long (codebase has long lines we accept)
+    "E402",  # module-import-not-at-top-of-file (intentional lazy imports)
+    "F401",  # unused-import (common during refactor; revisit later)
+    "F541",  # f-string-missing-placeholders (cosmetic)
+    "F841",  # unused-variable (common during refactor)
+    "E741",  # ambiguous-variable-name (math code uses single-letter names)
+]
