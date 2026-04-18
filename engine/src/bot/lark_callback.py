@@ -648,6 +648,69 @@ async def _cleanup_topics(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def _health(request: web.Request) -> web.Response:
+    """
+    Health check endpoint for Railway.
+    - Verifies Supabase DB connectivity via a trivial query.
+    - Reports the most recent completed digest run and its age in seconds.
+    - Reports the number of scheduler jobs registered (best-effort).
+    Returns 200 when DB is reachable, 503 otherwise.
+    Never raises — all errors are caught and returned as JSON.
+    """
+    payload: Dict[str, Any] = {
+        "status": "ok",
+        "db": True,
+        "last_digest_at": None,
+        "last_digest_age_seconds": None,
+        "jobs_registered": 0,
+    }
+
+    # 1) DB connectivity check (trivial query)
+    try:
+        db.table("companies").select("id").limit(1).execute()
+    except Exception as e:
+        payload["status"] = "error"
+        payload["db"] = False
+        payload["error"] = f"db: {str(e)[:200]}"
+        return web.json_response(payload, status=503)
+
+    # 2) Most recent completed digest_runs row
+    try:
+        resp = db.table("digest_runs") \
+            .select("completed_at") \
+            .eq("status", "completed") \
+            .not_.is_("completed_at", "null") \
+            .order("completed_at", desc=True) \
+            .limit(1) \
+            .execute()
+        if resp.data:
+            completed_at = resp.data[0].get("completed_at")
+            payload["last_digest_at"] = completed_at
+            if completed_at:
+                try:
+                    # Supabase returns ISO-8601; normalise trailing Z to +00:00
+                    ts = completed_at.replace("Z", "+00:00") if completed_at.endswith("Z") else completed_at
+                    dt = datetime.fromisoformat(ts)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    age = (datetime.now(timezone.utc) - dt).total_seconds()
+                    payload["last_digest_age_seconds"] = int(age)
+                except Exception as e:
+                    logger.debug(f"[Health] age parse failed: {e}")
+    except Exception as e:
+        logger.warning(f"[Health] digest_runs query failed: {e}")
+        payload["last_digest_error"] = str(e)[:200]
+
+    # 3) Scheduler jobs count (best-effort — scheduler lives in entrypoint)
+    try:
+        from ..entrypoint import scheduler
+        payload["jobs_registered"] = len(scheduler.get_jobs())
+    except Exception as e:
+        logger.debug(f"[Health] scheduler unreachable: {e}")
+
+    return web.json_response(payload, status=200)
+
+
 async def _list_chats(request: web.Request) -> web.Response:
     """List all group chats the bot is a member of."""
     from ..destinations.lark import _api_call
@@ -682,7 +745,7 @@ def create_callback_app() -> web.Application:
     app = web.Application()
     app.router.add_post("/lark/callback", handle_lark_callback)
     app.router.add_post("/ingest", handle_ingest)
-    app.router.add_get("/health", lambda _: web.json_response({"status": "ok"}))
+    app.router.add_get("/health", _health)
     app.router.add_get("/init-topics", _init_topics)
     app.router.add_post("/broadcast-file", _broadcast_file)
     app.router.add_get("/broadcast-welcome", _broadcast_welcome)
