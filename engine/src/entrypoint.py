@@ -5,6 +5,14 @@ python -m src.entrypoint
 """
 import asyncio
 import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -17,11 +25,6 @@ from .bot.daily_todo import send_all_daily_todos
 from .bot.hourly_sync import hourly_sync
 from .processors.calendar_sync import check_due_calendar_events as _check_due_calendar_events
 from .utils.holidays import is_business_day
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 # Silence noisy loggers: APScheduler executor + httpx per-request logs
