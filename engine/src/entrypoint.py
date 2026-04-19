@@ -178,6 +178,49 @@ async def reload_schedules():
         logger.error(f"Reload schedules error: {e}")
 
 
+async def catchup_missed_jobs(grace_minutes: int = 30):
+    """
+    启动时补跑已错过的定时任务。
+
+    APScheduler 的 misfire_grace_time 只对运行期间延迟的触发生效；
+    对启动前已错过的 cron 触发，它会直接把 next_run_time 算成下一次，
+    错过的那次不补发。此函数弥补这个行为。
+
+    仅处理每日类任务（daily_todo / calendar_due_check / DB schedules），
+    跳过 hourly_sync 避免在整点附近产生重复触发。
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/Toronto")
+    now = datetime.now(et)
+    window_start = now - timedelta(minutes=grace_minutes)
+
+    catchup_ids = {"daily_todo", "calendar_due_check"}
+    for job in scheduler.get_jobs():
+        if not isinstance(job.trigger, CronTrigger):
+            continue
+        if job.id not in catchup_ids and not job.id.startswith("schedule_"):
+            continue
+
+        # 找到 window_start 之后、≤ now 的最近一次触发点 = 错过的触发
+        fire = job.trigger.get_next_fire_time(None, window_start)
+        if fire is None or fire > now:
+            continue
+
+        logger.info(f"[catchup] {job.name} missed at {fire.strftime('%Y-%m-%d %H:%M %Z')}, firing now")
+        try:
+            scheduler.add_job(
+                job.func,
+                args=job.args,
+                kwargs=job.kwargs,
+                id=f"catchup_{job.id}_{int(now.timestamp())}",
+                name=f"Catchup: {job.name}",
+                next_run_time=now,
+            )
+        except Exception as e:
+            logger.error(f"[catchup] Failed to schedule {job.name}: {e}")
+
+
 async def poll_manual_triggers():
     """每 60 秒检查 manual_triggers 表"""
     try:
@@ -304,6 +347,9 @@ async def main():
 
     scheduler.start()
     logger.info("Scheduler started (DB-driven + manual trigger polling + daily todo)")
+
+    # 启动补发：对错过 ≤30 分钟的每日类任务立即补跑一次
+    await catchup_missed_jobs(grace_minutes=30)
 
     # Start Lark callback server FIRST (for card button clicks)
     callback_runner = None
