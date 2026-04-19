@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     first_response_hours,
     followup_response_hours,
     escalate_after_hours,
-    escalate_to,
+    escalate_to_id,
   } = body;
 
   if (!company_id) {
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       first_response_hours: first_response_hours ?? 4,
       followup_response_hours: followup_response_hours ?? 24,
       escalate_after_hours: escalate_after_hours ?? 48,
-      escalate_to: escalate_to ?? null,
+      escalate_to_id: escalate_to_id ?? null,
     })
     .select()
     .single();

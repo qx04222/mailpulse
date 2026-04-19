@@ -11,7 +11,7 @@ interface SlaConfig {
   first_response_hours: number;
   followup_response_hours: number;
   escalate_after_hours: number;
-  escalate_to: string | null;
+  escalate_to_id: string | null;
   created_at: string;
   company?: { id: string; name: string } | null;
 }
@@ -116,9 +116,9 @@ export default function SlaPage() {
                 <SlaField
                   label={t("sla.escalateTo")}
                   value={
-                    config.escalate_to
-                      ? people.find((p) => p.id === config.escalate_to)?.name ??
-                        config.escalate_to
+                    config.escalate_to_id
+                      ? people.find((p) => p.id === config.escalate_to_id)?.name ??
+                        config.escalate_to_id
                       : "—"
                   }
                 />
@@ -183,7 +183,7 @@ function SlaForm({
   const [escalateAfter, setEscalateAfter] = useState(
     config?.escalate_after_hours ?? 48
   );
-  const [escalateTo, setEscalateTo] = useState(config?.escalate_to ?? "");
+  const [escalateTo, setEscalateTo] = useState(config?.escalate_to_id ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -198,7 +198,7 @@ function SlaForm({
       first_response_hours: firstResponse,
       followup_response_hours: followup,
       escalate_after_hours: escalateAfter,
-      escalate_to: escalateTo || null,
+      escalate_to_id: escalateTo || null,
     };
 
     const res = await fetch("/api/sla", {
