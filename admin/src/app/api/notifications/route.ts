@@ -20,6 +20,7 @@ export async function POST(request: Request) {
   const supabase = createAdminClient();
   const body = await request.json();
   const {
+    person_id,
     channel,
     event_types,
     min_severity,
@@ -29,9 +30,14 @@ export async function POST(request: Request) {
     is_active,
   } = body;
 
+  if (!person_id) {
+    return Response.json({ error: "person_id is required" }, { status: 400 });
+  }
+
   const { data, error } = await supabase
     .from("notification_rules")
     .insert({
+      person_id,
       channel: channel ?? "email",
       event_types: event_types ?? [],
       min_severity: min_severity ?? "info",

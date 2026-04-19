@@ -3,10 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { useLocale } from "@/lib/i18n";
+import type { Person } from "@/lib/types";
 
 interface NotificationRule {
   id: string;
-  channel: "email" | "telegram" | "both";
+  person_id: string;
+  channel: "email" | "telegram" | "both" | "lark" | "email_lark" | "web";
   event_types: string[];
   min_severity: "info" | "warning" | "critical";
   only_assigned: boolean;
@@ -26,27 +28,36 @@ const EVENT_TYPES = [
   "sla_breach",
 ];
 
-const CHANNELS = ["email", "telegram", "both"] as const;
+const CHANNELS = ["email", "lark", "email_lark", "telegram", "both", "web"] as const;
 const SEVERITIES = ["info", "warning", "critical"] as const;
 
 export default function NotificationsPage() {
   const { t } = useLocale();
   const [rules, setRules] = useState<NotificationRule[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<NotificationRule | null>(null);
 
   const fetchRules = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/notifications");
-    const data = await res.json();
-    setRules(Array.isArray(data) ? data : []);
+    const [rulesRes, peopleRes] = await Promise.all([
+      fetch("/api/notifications"),
+      fetch("/api/people"),
+    ]);
+    const rulesData = await rulesRes.json();
+    const peopleData = await peopleRes.json();
+    setRules(Array.isArray(rulesData) ? rulesData : []);
+    setPeople(Array.isArray(peopleData) ? peopleData : []);
     setLoading(false);
   }, []);
 
   useEffect(() => {
     fetchRules();
   }, [fetchRules]);
+
+  const personName = (id: string) =>
+    people.find((p) => p.id === id)?.name ?? id;
 
   async function handleDelete(id: string) {
     if (!confirm(t("notifications.confirmDelete"))) return;
@@ -101,6 +112,9 @@ export default function NotificationsPage() {
               <div className="flex items-start justify-between">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
+                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                      {personName(rule.person_id)}
+                    </span>
                     <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
                       {t(`notifications.channels.${rule.channel}`)}
                     </span>
@@ -181,6 +195,7 @@ export default function NotificationsPage() {
       {showForm && (
         <NotificationForm
           rule={editing}
+          people={people}
           t={t}
           onClose={() => {
             setShowForm(false);
@@ -199,15 +214,18 @@ export default function NotificationsPage() {
 
 function NotificationForm({
   rule,
+  people,
   t,
   onClose,
   onSave,
 }: {
   rule: NotificationRule | null;
+  people: Person[];
   t: (key: string) => string;
   onClose: () => void;
   onSave: () => void;
 }) {
+  const [personId, setPersonId] = useState(rule?.person_id ?? "");
   const [channel, setChannel] = useState<NotificationRule["channel"]>(
     rule?.channel ?? "email"
   );
@@ -238,8 +256,15 @@ function NotificationForm({
     setSaving(true);
     setError("");
 
+    if (!personId) {
+      setError(t("notifications.personRequired"));
+      setSaving(false);
+      return;
+    }
+
     const payload = {
       id: rule?.id,
+      person_id: personId,
       channel,
       event_types: eventTypes,
       min_severity: minSeverity,
@@ -281,6 +306,26 @@ function NotificationForm({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              {t("notifications.person")}
+            </label>
+            <select
+              value={personId}
+              onChange={(e) => setPersonId(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              required
+              disabled={!!rule}
+            >
+              <option value="">--</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               {t("notifications.channel")}
