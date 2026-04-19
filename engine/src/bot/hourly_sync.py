@@ -33,12 +33,6 @@ def _find_admin_lark_id() -> Optional[str]:
         logger.warning(f"[Hourly] Could not load people to find admin: {e}")
         return None
 
-    # Prefer explicit is_admin flag
-    for p in people:
-        if p.get("is_admin") and p.get("lark_user_id"):
-            return p["lark_user_id"]
-
-    # Fallback: name contains "Xin"
     for p in people:
         name = (p.get("name") or "")
         if "Xin" in name and p.get("lark_user_id"):
@@ -284,8 +278,8 @@ async def hourly_sync():
             if not admin_lark_id:
                 logger.warning(
                     "[Hourly] Systemic failure detected but no admin Lark ID "
-                    "found (no is_admin person and no person named 'Xin' with "
-                    "lark_user_id). Skipping alert."
+                    "found (no person named 'Xin' with lark_user_id). "
+                    "Skipping alert."
                 )
             else:
                 companies_text = ", ".join(failed_companies) or "(none)"
