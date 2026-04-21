@@ -247,8 +247,9 @@ async def handle_lark_callback(request: web.Request) -> web.Response:
     try:
         import json as _json
         payload = _json.loads(body)
-        if payload.get("event", {}).get("type") == "message_read" and "schema" not in payload:
-            logger.debug("[Lark] message_read v1 (ignored)")
+        event_type = payload.get("event", {}).get("type")
+        if "schema" not in payload and event_type in ("message_read", "p2p_chat_create"):
+            logger.debug(f"[Lark] {event_type} v1 (ignored)")
             return web.json_response({"msg": "success"})
     except Exception:
         pass
