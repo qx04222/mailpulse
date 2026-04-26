@@ -23,6 +23,7 @@ from .bot.server import create_bot_app
 from .bot.lark_callback import create_callback_app
 from .bot.daily_todo import send_all_daily_todos
 from .bot.hourly_sync import hourly_sync
+from .bot.token_health_check import check_gmail_token_health
 from .processors.calendar_sync import check_due_calendar_events as _check_due_calendar_events
 from .utils.holidays import is_business_day
 logger = logging.getLogger(__name__)
@@ -341,6 +342,16 @@ async def main():
         CronTrigger(hour=8, minute=30, day_of_week="mon-sat", timezone="America/Toronto"),
         id="calendar_due_check",
         name="Calendar Due Date Reminder",
+        misfire_grace_time=600,
+    )
+
+    # Gmail token 健康检查：每天 6:00 ET
+    # 失效或临近到期（age >= 5 天）时给 admin 推 Lark
+    scheduler.add_job(
+        check_gmail_token_health,
+        CronTrigger(hour=6, minute=0, timezone="America/Toronto"),
+        id="token_health_check",
+        name="Gmail Token Health Check",
         misfire_grace_time=600,
     )
 

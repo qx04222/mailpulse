@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     gmail_client_id: str
     gmail_client_secret: str
     gmail_refresh_token: str
+    gmail_token_issued_at: Optional[str] = None  # ISO date (YYYY-MM-DD) when refresh token was issued
     telegram_bot_token: str = ""
     telegram_enabled: bool = True
     supabase_url: str

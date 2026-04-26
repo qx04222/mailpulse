@@ -4,6 +4,7 @@
 或在 .env 文件中配置
 """
 import os
+from datetime import date
 from dotenv import load_dotenv
 from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -31,5 +32,9 @@ flow = InstalledAppFlow.from_client_config(
 )
 
 creds = flow.run_local_server(port=8090, access_type="offline", prompt="consent")
+issued_at = date.today().isoformat()
 print(f"\n✅ Refresh Token:\n{creds.refresh_token}")
-print("\n把上面的 token 复制给我。")
+print(f"\n📅 Issued At:\n{issued_at}")
+print("\n更新到 Railway / .env 的两个变量：")
+print(f"  GMAIL_REFRESH_TOKEN={creds.refresh_token}")
+print(f"  GMAIL_TOKEN_ISSUED_AT={issued_at}")
